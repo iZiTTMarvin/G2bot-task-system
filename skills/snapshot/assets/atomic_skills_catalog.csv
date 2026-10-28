@@ -1,0 +1,126 @@
+英文标签,中文标签,状态,所属技能族
+Touch,触摸,可用-基础,基础
+Grasp,抓取,可用-基础,基础
+Release,释放,可用-基础,基础
+Pick,拿起,可用-基础,基础
+Place,放置,可用-基础,基础
+Hold,握住,可用-基础,基础
+Push,推,可用-基础,基础
+Pull,拉,可用-基础,基础
+Lift,抬起,可用-基础,基础
+Lower,放下,可用-基础,基础
+Remove,移除,可用-基础,基础
+Takeout,取出,可用-基础,基础
+Adjust,调整,可用-基础,基础
+Rotate,旋转,可用,基础
+Turn,转动,可用,基础
+Slide,滑动,可用,基础
+Tap,轻敲,可用,基础
+Scratch,刮擦,可用,基础
+Stretch,伸展,可用,基础
+Swipe,滑动触屏,可用-谨慎,基础
+Point,指向,可用-谨慎,基础
+Carry,携带,可用-谨慎,基础
+HoldLargeObject,握持大物,可用-谨慎,基础
+Press,按压,可用,插装拨按
+PressButton,按按钮,可用,插装拨按
+Toggle,拨动,可用,插装拨按
+Insert,插入,可用,插装拨按
+PullOut,拔出,可用,插装拨按
+Unplug,拔插头,可用,插装拨按
+PushTogether,推合,可用,插装拨按
+PullApart,拉开,可用,插装拨按
+Open,打开,可用,开合启闭
+Close,关闭,可用,开合启闭
+OpenBox,打开盒子,可用,开合启闭
+CloseBox,关闭盒子,可用,开合启闭
+OpenJar,开罐,可用,开合启闭
+CloseJar,关罐,可用,开合启闭
+Uncap,掀开,可用,开合启闭
+Unzip,拉开拉链,可用,开合启闭
+Screw,拧紧,可用,开合启闭
+Unscrew,拧松螺丝,可用,开合启闭
+Twist,扭转,可用,开合启闭
+TurnWheel,转动轮子,可用,开合启闭
+Fold,折叠,可用,折叠卷绕
+Unfold,展开,可用,折叠卷绕
+Spread open,撑开,可用,折叠卷绕
+Roll,卷绕滚动,可用,折叠卷绕
+Stack,堆叠,可用,折叠卷绕
+Unstack,拆卸,可用,折叠卷绕
+Straighten,整理,可用,折叠卷绕
+Pinch,捏,可用,夹取分拣
+Clip,夹住,可用,夹取分拣
+Flip,翻转,可用,夹取分拣
+Shake,摇动,可用,夹取分拣
+squeeze,挤,可用,夹取分拣
+Stick,粘贴,可用,包贴绑封
+Tear,撕,可用,包贴绑封
+Tie,系紧,可用,包贴绑封
+Untie,解开,可用,包贴绑封
+Cover,遮盖,可用,包贴绑封
+Package,包装,可用,包贴绑封
+Peel,削皮,可用-谨慎,包贴绑封
+Peel,剥皮,可用-谨慎,包贴绑封
+Smear,涂抹,可用-谨慎,包贴绑封
+Paint,涂刷,可用-谨慎,包贴绑封
+Pour,倒,可用,倾倒搅舀
+Scoop,舀,可用,倾倒搅舀
+Scoop up,铲起,可用,倾倒搅舀
+Stir,搅拌,可用,倾倒搅舀
+dip,浸,可用-谨慎,倾倒搅舀
+Hang,挂,可用,挂放张挂
+Takedown,取下,可用,挂放张挂
+Wipe,擦拭,可用,清洁刷洗
+Brush,刷,可用,清洁刷洗
+Sweep,扫地,可用-谨慎,清洁刷洗
+Write,书写,可用,书写盖章
+stamp,盖章,可用,书写盖章
+Scan,扫描,可用-谨慎,书写盖章
+HandOver,传递,可用-谨慎,传递交互
+HandOut,递给,可用-谨慎,传递交互
+TakeOver,接过,可用-谨慎,传递交互
+Suction,吸附,禁用-无吸盘末端,禁用
+Throw,投掷,禁用-投掷动作危险,禁用
+Drop,丢下,禁用-抛掷动作,禁用
+Wave,挥手,禁用-人形整机动作,禁用
+Catch,接住,禁用-接抛动作,禁用
+Clap,拍手,禁用-人形整机动作,禁用
+Transport,搬运,禁用-底盘固定不可搬运移动,禁用
+Move,移动,禁用-整机移动,禁用
+LiftHeavyObject,举重,禁用-重物超限,禁用
+Cut,切割,禁用-刀具危险,禁用
+Beat,敲打,禁用-锤击危险,禁用
+Hammer,锤击,禁用-锤击危险,禁用
+Mop,拖地,禁用-需大面积移动,禁用
+Drill,钻孔,禁用-危险工具,禁用
+Saw,锯,禁用-危险工具,禁用
+Chop,剁碎,禁用-刀具且属做饭,禁用
+Whisk,搅打,禁用-烹饪动作,禁用
+RollDough,擀面,禁用-做饭,禁用
+Knead,揉捏,禁用-揉面做饭,禁用
+Stir-Fry,翻炒,禁用-明火做饭,禁用
+Wrap,翻抄,禁用-烹饪翻炒,禁用
+Ignite,点燃,禁用-明火,禁用
+KeepPumping,充气,禁用-工位无充气工具,禁用
+Rinse,冲洗,禁用-依赖水,禁用
+water,浇水,禁用-水龙头不出水,禁用
+Pipette,吸取液体,禁用-实验器具不在工位,禁用
+Iron,熨烫,禁用-需水电,禁用
+vacuum,吸尘,禁用-无吸尘器,禁用
+armretract,手臂内收,禁用-整机控制标签,禁用
+Turn head to the left,头向左转,禁用-人形整机动作,禁用
+Turn head to the right,头部向右,禁用-人形整机动作,禁用
+Tilt head up,头部上抬,禁用-人形整机动作,禁用
+Tilt head down,头部下低,禁用-人形整机动作,禁用
+Raise height,高度上升,禁用-整机升降,禁用
+Lower height,高度降低,禁用-整机升降,禁用
+Arch waist backward,腰部后仰,禁用-人形整机动作,禁用
+Bend waist forward,腰部前弯,禁用-人形整机动作,禁用
+Swivel,腰部转向,禁用-人形整机动作,禁用
+Await,等待,禁用-等待类步骤,禁用
+Other,其他,禁用-语义不明,禁用
+Pick-and-place,拿起与放置,禁用-复合动作标签,禁用
+pick-and-place,拿起并放置,禁用-复合动作标签,禁用
+Pick and place,拿起并放置,禁用-复合动作标签,禁用
+pick up and close,拿起并关闭,禁用-复合动作标签,禁用

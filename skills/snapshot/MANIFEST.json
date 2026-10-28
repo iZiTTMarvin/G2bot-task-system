@@ -1,0 +1,13 @@
+{
+  "source": "C:/Users/xuhaochen/.agents/skills/g2-robot-task-designer-v2",
+  "files": {
+    "assets/atomic_skills_catalog.csv": "389b37c986618f40c6e5dace6e842c94b2fcaaa533cc0979153055c7acc13d02",
+    "references/06-learned-rules.md": "cbc70d8a81b7de3ce86d4e8d8e6d6e3e3b0f3cc042b03126104281310de24c6b",
+    "scripts/check_segment_overlap.py": "bdd0f2fd83253ca3638d390330e4b1b2e11f398927c2829853c91910797604af",
+    "scripts/lookup_history.py": "4277c13c95558abe34bd8219c3dffb2480ffa9b85fbbabf7299c788806deb254",
+    "scripts/materials.py": "bbcea1cd5a78062ffcc84cbc37f339aa7acda64d74b925e2c51b3f761ef63214",
+    "scripts/validate_tasks.py": "a5d43500ae07794a46bdcbd57b1c380802fe6dfc6062fa27160f2e644360d6f5",
+    "SKILL.md": "2da62fe872c2698a5ef6a18fb899af01a009297a37adb0e3896c3263f380ee08"
+  },
+  "rule_snapshot_id": "rs_6d320cabb60194d1"
+}
