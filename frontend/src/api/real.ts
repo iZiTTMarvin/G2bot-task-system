@@ -1,6 +1,6 @@
 // 真实 API 客户端：只使用相对路径 /api/v1，开发时由 Vite 代理转发。
 import type { ApiClient, BatchCreateInput } from './client';
-import { throwFromResponse } from './errors';
+import { ApiError, throwFromResponse } from './errors';
 import type {
   Attachment,
   AttachmentPage,
@@ -40,7 +40,15 @@ async function request<T>(
   }
   if (resp.status === 204) return undefined as T;
   const text = await resp.text();
-  const parsed = text ? JSON.parse(text) : undefined;
+  let parsed: unknown;
+  if (text) {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      if (!resp.ok) throwFromResponse(resp.status, undefined);
+      throw new ApiError('NETWORK_ERROR', `服务返回了非 JSON 内容（HTTP ${resp.status}）`, {});
+    }
+  }
   if (!resp.ok) throwFromResponse(resp.status, parsed);
   return parsed as T;
 }
@@ -95,10 +103,21 @@ export const realClient: ApiClient = {
   createExport: (payload, key) =>
     request<ExportRecord>('POST', '/exports', { json: payload, key }),
   downloadExport: async (url) => {
-    const resp = await fetch(url);
+    let resp: Response;
+    try {
+      resp = await fetch(url);
+    } catch {
+      throw new ApiError('NETWORK_ERROR', '下载请求失败：服务未启动或已断开', {});
+    }
     if (!resp.ok) {
       const text = await resp.text();
-      throwFromResponse(resp.status, text ? JSON.parse(text) : undefined);
+      let body: unknown;
+      try {
+        body = text ? JSON.parse(text) : undefined;
+      } catch {
+        body = undefined;
+      }
+      throwFromResponse(resp.status, body);
     }
     return resp.blob();
   },

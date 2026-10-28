@@ -3,7 +3,7 @@ import {
   Alert, Button, Descriptions, Drawer, Empty, Input, InputNumber, List, Modal,
   Popconfirm, Space, Spin, Tabs, Tag, Tooltip, Typography, message,
 } from 'antd';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ApiClient } from '../api/client';
 import { newIdempotencyKey } from '../api/client';
 import { ApiError } from '../api/errors';
@@ -40,15 +40,19 @@ export default function TaskDrawer({ api, taskId, onClose, onUpdated }: Props) {
   const [reviseOpen, setReviseOpen] = useState(false);
   const [reviseFeedback, setReviseFeedback] = useState('');
 
-  const load = useCallback(async () => {
+  const taskIdRef = useRef<string | null>(null);
+
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!taskId) return;
-    setLoading(true);
+    const currentTaskId = taskId;
+    if (!opts?.silent) setLoading(true);
     try {
       const [d, vs, ds] = await Promise.all([
-        api.getTask(taskId),
-        api.listVersions(taskId),
-        api.listDecisions(taskId),
+        api.getTask(currentTaskId),
+        api.listVersions(currentTaskId),
+        api.listDecisions(currentTaskId),
       ]);
+      if (taskIdRef.current !== currentTaskId) return; // 过期响应丢弃
       setDetail(d);
       setVersions(vs.items);
       setDecisions(ds.items);
@@ -64,10 +68,21 @@ export default function TaskDrawer({ api, taskId, onClose, onUpdated }: Props) {
   }, [api, taskId]);
 
   useEffect(() => {
+    taskIdRef.current = taskId;
     setViewVersionId(null);
     setCompare(false);
     load();
+    return () => {
+      taskIdRef.current = null;
+    };
   }, [load]);
+
+  // 作业占用时轮询刷新（2s，解除占用即停）——兑现“作业结束后自动恢复”
+  useEffect(() => {
+    if (!detail?.summary.busy_run_id) return;
+    const timer = setInterval(() => load({ silent: true }), 2000);
+    return () => clearInterval(timer);
+  }, [detail?.summary.busy_run_id, load]);
 
   const dirty = useMemo(() => {
     if (!detail) return false;
@@ -84,29 +99,45 @@ export default function TaskDrawer({ api, taskId, onClose, onUpdated }: Props) {
   const canSave = !!detail && !busy && status !== 'approved' && status !== 'ai_reviewing';
   const canDecide = !!detail?.can_decide && !dirty;
 
+  const [guardOpen, setGuardOpen] = useState(false);
+
   const closeGuard = () => {
     if (!dirty) {
       onClose(false);
       return;
     }
-    Modal.confirm({
-      title: '有未保存的修改',
-      content: '关闭前是否保存？未保存的修改将丢失。',
-      okText: '保存并关闭',
-      cancelText: '放弃修改',
-      okButtonProps: { danger: false },
-      onOk: async () => {
-        await doSave();
-        onClose(true);
-      },
-      onCancel: () => onClose(true),
-    });
+    setGuardOpen(true); // 蓝图 5.2：保存 / 放弃 / 继续编辑 三选
+  };
+
+  const guardSaveAndClose = async () => {
+    const saved = await doSave();
+    if (saved) {
+      setGuardOpen(false);
+      onClose(true);
+    } else {
+      message.info('保存未成功，已保留编辑现场');
+      setGuardOpen(false);
+    }
   };
 
   const buildContent = (): TaskContent => ({ name: name.trim(), steps: steps.map((s) => s.trim()), materials });
 
+  const validateForm = (): string | null => {
+    if (!name.trim()) return '任务名不能为空';
+    if (steps.length === 0) return '至少保留一条步骤';
+    if (steps.some((x) => !x.trim())) return '存在空白步骤，请删除或填写内容';
+    if (materials.length === 0) return '至少保留一项物料';
+    if (materials.some((m) => !m.name.trim())) return '存在空白物料名，请删除或填写名称';
+    return null;
+  };
+
   const doSave = async (): Promise<TaskDetail | null> => {
     if (!detail) return null;
+    const formError = validateForm();
+    if (formError) {
+      message.warning(formError);
+      return null;
+    }
     setSaving(true);
     try {
       const saved = await api.saveVersion(
@@ -138,24 +169,29 @@ export default function TaskDrawer({ api, taskId, onClose, onUpdated }: Props) {
   };
 
   const doSaveAndApprove = async () => {
+    if (!detail) return;
     const saved = await doSave();
-    if (!saved) return;
+    // 无改动（如已单独保存过）时，直接对当前版本发起通过，不静默跳过
+    const target = saved ?? (detail.can_decide ? detail : null);
+    if (!target) return;
     try {
       const result = await api.decide(
-        saved.summary.id,
+        target.summary.id,
         {
-          expected_revision: saved.summary.revision,
-          version_id: saved.current_version.id,
+          expected_revision: target.summary.revision,
+          version_id: target.current_version.id,
           decision: 'approve',
         },
         newIdempotencyKey()
       );
       setDetail(result.task);
       message.success('已保存并通过');
+      void load();
       onUpdated();
-    } catch {
+    } catch (e) {
       // 蓝图：第二步失败显示“版本已保存，通过失败”，保留新稿
-      message.warning('版本已保存，通过失败；新版本已保留，请处理后重试');
+      const err = e as ApiError;
+      message.warning(`版本已保存，通过失败（${err.code}：${err.message}）；新版本已保留，请处理后重试`);
       await load();
       onUpdated();
     }
@@ -562,6 +598,25 @@ export default function TaskDrawer({ api, taskId, onClose, onUpdated }: Props) {
           </div>
         </div>
       )}
+
+      <Modal
+        open={guardOpen}
+        title="有未保存的修改"
+        onCancel={() => setGuardOpen(false)}
+        footer={[
+          <Button key="continue" onClick={() => setGuardOpen(false)}>
+            继续编辑
+          </Button>,
+          <Button key="discard" danger onClick={() => { setGuardOpen(false); onClose(true); }}>
+            放弃修改并关闭
+          </Button>,
+          <Button key="save" type="primary" onClick={guardSaveAndClose}>
+            保存并关闭
+          </Button>,
+        ]}
+      >
+        关闭前是否保存？未保存的修改将丢失。（ESC / 点击遮罩 = 继续编辑）
+      </Modal>
 
       <Modal
         open={rejectOpen}

@@ -19,8 +19,9 @@ logger = logging.getLogger("g2tasks")
 
 
 def error_response(
-    request: Request, status_code: int, code: str, message: str, details: dict | None = None
+    request: Request | None, status_code: int, code: str, message: str, details: dict | None = None
 ) -> JSONResponse:
+    request_id = getattr(getattr(request, "state", None), "request_id", "") if request else ""
     return JSONResponse(
         status_code=status_code,
         content={
@@ -28,7 +29,7 @@ def error_response(
                 "code": code,
                 "message": message,
                 "details": details or {},
-                "request_id": getattr(request.state, "request_id", "") or ids.new_request_id(),
+                "request_id": request_id or ids.new_request_id(),
             }
         },
     )
@@ -116,6 +117,11 @@ def create_app() -> FastAPI:
         async def spa_fallback(full_path: str):
             from fastapi.responses import FileResponse
 
+            # API 前缀不允许被 SPA fallback 吞掉：未匹配的 API 路径按 404 JSON 返回
+            if full_path == "api" or full_path.startswith("api/"):
+                return error_response(
+                    request=None, status_code=404, code="NOT_FOUND", message="接口不存在"
+                )
             candidate = dist / full_path
             if candidate.is_file():
                 return FileResponse(candidate)

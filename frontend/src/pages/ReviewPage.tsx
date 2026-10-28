@@ -2,7 +2,7 @@
 import {
   Alert, Button, Input, Pagination, Select, Space, Spin, Table, Tabs, Tag, Typography, message,
 } from 'antd';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ApiClient } from '../api/client';
 import { newIdempotencyKey } from '../api/client';
 import { ApiError } from '../api/errors';
@@ -27,7 +27,9 @@ export default function ReviewPage({ api }: Props) {
   const [selectedApproved, setSelectedApproved] = useState<string[]>([]);
   const [exporting, setExporting] = useState(false);
 
+  const reqSeq = useRef(0);
   const load = useCallback(async () => {
+    const seq = ++reqSeq.current;
     setLoading(true);
     setError(null);
     try {
@@ -38,11 +40,13 @@ export default function ReviewPage({ api }: Props) {
         page: pageNum,
         page_size: 20,
       });
+      if (seq !== reqSeq.current) return; // 过期响应丢弃
       setPage(data);
     } catch (e) {
+      if (seq !== reqSeq.current) return;
       setError((e as ApiError).message ?? '列表读取失败');
     } finally {
-      setLoading(false);
+      if (seq === reqSeq.current) setLoading(false);
     }
   }, [api, status, batchId, q, pageNum]);
 
@@ -54,20 +58,27 @@ export default function ReviewPage({ api }: Props) {
     api.listBatches(1, 100).then((r) => setBatches(r.items)).catch(() => {});
   }, [api]);
 
-  // 活动作业时 2 秒轮询刷新（终态自然停止：无 busy 任务即停）
-  const hasBusy = !!page?.items.some((t) => t.busy_run_id);
+  // 后台作业活动时 2 秒轮询（待审/审核中计数>0 或当前页有占用；终态自然停止）
+  const activity =
+    (page?.status_counts.pending_review ?? 0) > 0 ||
+    (page?.status_counts.ai_reviewing ?? 0) > 0 ||
+    !!page?.items.some((t) => t.busy_run_id);
   useEffect(() => {
-    if (!hasBusy) return;
+    if (!activity) return;
     const timer = setInterval(load, 2000);
     return () => clearInterval(timer);
-  }, [hasBusy, load]);
+  }, [activity, load]);
 
   const counts = page?.status_counts;
 
   const doExport = async () => {
     if (selectedApproved.length === 0) return;
     const batchOf = page?.items.find((t) => t.id === selectedApproved[0])?.batch_id;
-    if (!batchOf) return;
+    if (!batchOf) {
+      message.warning('所选任务不在当前列表中，请刷新后重新选择');
+      setSelectedApproved([]);
+      return;
+    }
     if (selectedApproved.some((id) => page?.items.find((t) => t.id === id)?.batch_id !== batchOf)) {
       message.warning('只能导出同一批次的任务');
       return;
@@ -84,7 +95,7 @@ export default function ReviewPage({ api }: Props) {
       a.href = url;
       a.download = rec.filename;
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
       message.success(`已导出 ${rec.versions.length} 条任务`);
       setSelectedApproved([]);
     } catch (e) {
@@ -106,6 +117,13 @@ export default function ReviewPage({ api }: Props) {
         render: (id: string) => batches.find((b) => b.id === id)?.name ?? id.slice(0, 12),
       },
       { title: '步骤数', dataIndex: 'step_count', key: 'steps', width: 80 },
+      {
+        title: '状态',
+        dataIndex: 'status',
+        key: 'status',
+        width: 100,
+        render: (v: TaskStatus) => <Tag>{STATUS_LABEL[v]}</Tag>,
+      },
       { title: '当前版本', dataIndex: 'version_no', key: 'version', width: 90, render: (v: number) => `v${v}` },
       {
         title: '人工修改',
@@ -172,6 +190,7 @@ export default function ReviewPage({ api }: Props) {
           onChange={(v) => {
             setBatchId(v);
             setPageNum(1);
+            setSelectedApproved([]);
           }}
           options={batches.map((b) => ({ value: b.id, label: b.name }))}
         />
@@ -182,6 +201,7 @@ export default function ReviewPage({ api }: Props) {
           onSearch={(v) => {
             setQ(v);
             setPageNum(1);
+            setSelectedApproved([]);
           }}
         />
         <Typography.Text type="secondary">
@@ -233,7 +253,10 @@ export default function ReviewPage({ api }: Props) {
           pageSize={20}
           total={page?.total ?? 0}
           showSizeChanger={false}
-          onChange={setPageNum}
+          onChange={(n) => {
+            setPageNum(n);
+            setSelectedApproved([]);
+          }}
         />
       </div>
 

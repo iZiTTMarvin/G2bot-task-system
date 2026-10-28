@@ -232,9 +232,16 @@ function idempotent<T>(scope: string, key: string, body: unknown, run: () => { s
     return existing.result as T;
   }
   state.idempotency.set(`${scope}|${key}`, { digest: d, status: 'in_progress', statusCode: 0, result: undefined });
-  const { status, result } = run();
-  state.idempotency.set(`${scope}|${key}`, { digest: d, status: 'committed', statusCode: status, result });
-  return result;
+  let outcome: { status: number; result: unknown };
+  try {
+    outcome = run();
+  } catch (e) {
+    // 前置校验/业务校验失败不占用幂等键（与真实后端一致）
+    state.idempotency.delete(`${scope}|${key}`);
+    throw e;
+  }
+  state.idempotency.set(`${scope}|${key}`, { digest: d, status: 'committed', statusCode: outcome.status, result: outcome.result });
+  return outcome.result as T;
 }
 
 // ---------- 作业模拟 ----------
@@ -324,7 +331,7 @@ function runGenerate(batchId: string, mode: MockFaults['generateMode']): Run {
   }, 900);
 
   setTimeout(() => {
-    if (run.status === 'failed') return;
+    if (run.status !== 'queued' && run.status !== 'running') return;
     created.forEach((task, i) => {
       const reviewMode = mode === 'partial_review_fail' && i === 1 ? 'timeout' : mode === 'ai_reject' ? 'reject' : 'ok';
       reviewOne(task, run, reviewMode);
@@ -348,6 +355,7 @@ function runSingleTask(taskId: string, kind: 'review_task' | 'revise_task', feed
 
   setTimeout(() => { run.status = 'running'; run.started_at = now(); run.stage = kind === 'revise_task' ? 'generating' : 'validating'; }, 120);
   setTimeout(() => {
+    if (run.status !== 'queued' && run.status !== 'running') return;
     if (kind === 'revise_task') {
       const base = contentOf(task);
       const steps = [...base.steps];
@@ -716,8 +724,9 @@ export const mockClient: ApiClient & { simulateRestart(): void; reseed(): void }
         t.revision += 1;
       }
     }
-    for (const [, rec] of state.idempotency) {
-      if (rec.status === 'in_progress') rec.status = 'committed'; // 简化：重启后可重试
+    for (const [k, rec] of state.idempotency) {
+      // 处理中记录按可重试处理：删除后同键请求重新执行
+      if (rec.status === 'in_progress') state.idempotency.delete(k);
     }
   },
   reseed(): void {

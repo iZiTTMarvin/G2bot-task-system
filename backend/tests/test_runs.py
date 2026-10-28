@@ -484,3 +484,115 @@ def test_export_missing_file(client):
     target.unlink()
     r = client.get(ex["download_url"])
     assert r.status_code == 500 and r.json()["error"]["code"] == "EXPORT_FAILED"
+
+
+# ---------- review 回归（P0-1 / P1-1 / P1-2） ----------
+
+def test_batch_idempotent_commit_is_atomic(client, monkeypatch):
+    """批次 INSERT 与幂等 committed 必须同事务：第二事务失败时批次也不落库。"""
+    from app import db
+
+    batch = make_batch(client, name="原子性", key="kb-atomic")
+    row = db.get_conn().execute(
+        "SELECT status FROM idempotency_records WHERE key='kb-atomic'"
+    ).fetchone()
+    assert row["status"] == "committed"
+    # 业务与幂等记录同事务：无法在两者之间打断（此处验证记录数一致且重放幂等）
+    again = client.post(
+        "/api/v1/batches",
+        json={"name": "原子性", "goal": "围绕真实居家活动设计任务", "task_count": 3,
+              "task_mode": "long", "reference_text": "台面物料：收纳篮、毛巾"},
+        headers={"Idempotency-Key": "kb-atomic"},
+    )
+    assert again.status_code == 201 and again.json()["id"] == batch["id"]
+    total = db.get_conn().execute("SELECT COUNT(*) AS n FROM batches").fetchone()["n"]
+    assert total == 1
+
+
+def test_export_formula_content_stays_text(client, monkeypatch):
+    """= 开头的用户内容必须导出为文本单元格，不得成为公式。"""
+    from app.agents.fake import FakeModelClient
+    from tests.conftest import generate, make_batch
+
+    class EvilNames(FakeModelClient):
+        def generate_batch(self, **kw):
+            tasks = super().generate_batch(**kw)
+            for t in tasks:
+                t["name"] = '=HYPERLINK("http://evil","点我")'
+            return tasks
+
+    from app.services import runs as runs_service
+
+    monkeypatch.setattr(runs_service, "get_client", lambda: EvilNames())
+    batch = make_batch(client, name="公式注入", key="kb-e")
+    run = generate(client, batch["id"])
+    assert run["status"] == "succeeded"
+
+    tasks = client.get("/api/v1/tasks").json()["items"]
+    for t in tasks:
+        d = client.get(f"/api/v1/tasks/{t['id']}").json()
+        client.post(
+            f"/api/v1/tasks/{t['id']}/decisions",
+            json={"expected_revision": d["summary"]["revision"],
+                  "version_id": d["current_version"]["id"], "decision": "approve"},
+            headers={"Idempotency-Key": f"dec-e-{t['id']}"},
+        )
+    ids = [t["id"] for t in tasks]
+    ex = client.post(
+        "/api/v1/exports",
+        json={"batch_id": batch["id"], "task_ids": ids},
+        headers={"Idempotency-Key": "ex-e"},
+    )
+    assert ex.status_code == 201, ex.text
+
+    import io
+
+    from openpyxl import load_workbook
+
+    dl = client.get(ex.json()["download_url"])
+    wb = load_workbook(io.BytesIO(dl.content))
+    ws = wb.active
+    for row in ws.iter_rows(min_row=2):
+        for cell in row:
+            assert cell.data_type == "s", f"{cell.coordinate} 是 {cell.data_type} 不是文本"
+
+
+def test_unexpected_review_exception_rescues_task(client, monkeypatch):
+    """审核期非 ModelCallError 异常：任务转 review_failed，不得卡死 ai_reviewing。"""
+    from app.agents.fake import FakeModelClient
+
+    from app.services import runs as runs_service
+
+    class ExplodingReview(FakeModelClient):
+        def review_task(self, **kw):
+            raise RuntimeError("boom: 快照脚本意外崩溃")
+
+    monkeypatch.setattr(runs_service, "get_client", lambda: ExplodingReview())
+    batch = make_batch(client, name="异常兜底", key="kb-x")
+    r = client.post(
+        f"/api/v1/batches/{batch['id']}/generate",
+        json={},
+        headers={"Idempotency-Key": "kg-x"},
+    )
+    run = wait_run(client, r.json()["id"])
+    assert run["status"] == "failed"
+    tasks = client.get("/api/v1/tasks").json()["items"]
+    assert tasks
+    for t in tasks:
+        d = client.get(f"/api/v1/tasks/{t['id']}").json()
+        assert d["summary"]["status"] == "review_failed", d["summary"]["status"]
+        assert d["summary"]["busy_run_id"] is None
+        assert d["last_error"]["code"] == "INTERNAL_ERROR"
+        # 恢复路径可用：手动重审
+        rr = client.post(
+            f"/api/v1/tasks/{t['id']}/review",
+            json={"expected_revision": d["summary"]["revision"],
+                  "version_id": d["current_version"]["id"]},
+            headers={"Idempotency-Key": f"rv-x-{t['id']}"},
+        )
+        assert rr.status_code == 202
+        break  # 只重审第一条；先恢复正常的模型客户端
+    monkeypatch.setattr(runs_service, "get_client", lambda: FakeModelClient())
+    wait_run(client, rr.json()["id"])
+    final = client.get(f"/api/v1/tasks/{rr.json()['task_id']}").json()
+    assert final["summary"]["status"] == "human_pending"

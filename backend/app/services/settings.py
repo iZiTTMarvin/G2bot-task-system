@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -112,5 +111,3 @@ def has_active_run() -> bool:
     ).fetchone()
     return row is not None
 
-
-EMAIL_RE = re.compile(r"^[^@]+@[^@]+$")  # 预留：防止把密钥误填到模型名等字段

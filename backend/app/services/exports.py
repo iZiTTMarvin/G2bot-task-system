@@ -88,14 +88,16 @@ def create_export(
     ws.append(COLUMNS)
     for task, version in version_rows:
         content = _loads(version["content_json"])
-        # 全部按字符串写入：=、+ 开头的内容保持文本，不会被当作公式
-        ws.append(
-            [
-                str(content["name"]),
-                _steps_cell(content["steps"]),
-                _materials_cell(content["materials"]),
-            ]
-        )
+        row_values = [
+            str(content["name"]),
+            _steps_cell(content["steps"]),
+            _materials_cell(content["materials"]),
+        ]
+        ws.append(row_values)
+        # openpyxl 会把 "=" 开头的字符串当公式（data_type='f'）；
+        # 契约要求全部为文本单元格，显式改回字符串类型。
+        for cell in ws[ws.max_row]:
+            cell.data_type = "s"
 
     export_id = ids.new_id("exp")
     filename = f"G2任务导出_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{export_id[-6:]}.xlsx"

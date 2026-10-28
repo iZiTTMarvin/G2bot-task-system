@@ -36,6 +36,7 @@ def create(
     task_mode: str,
     reference_text: str,
     attachment_ids: list[str],
+    finish=None,
 ) -> dict[str, Any]:
     name = name.strip()
     goal = goal.strip()
@@ -81,7 +82,11 @@ def create(
                 now,
             ),
         )
-    return get_batch(batch_id)
+        row = conn.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
+        payload = render.render_batch(conn, row)
+        if finish:
+            finish(conn, 201, payload)
+    return payload
 
 
 def _get_row(conn: Any, batch_id: str):

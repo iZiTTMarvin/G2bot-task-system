@@ -60,12 +60,23 @@ def lookup(scope: str, key: str, digest: str) -> tuple[int, Any] | None:
 
 
 def begin(scope: str, key: str, digest: str) -> None:
-    with db.tx() as conn:
-        conn.execute(
-            "INSERT INTO idempotency_records (scope, key, request_digest, status, created_at)"
-            " VALUES (?,?,?,'in_progress',?)",
-            (scope, key, digest, db.utcnow()),
-        )
+    import sqlite3 as _sqlite
+
+    try:
+        with db.tx() as conn:
+            conn.execute(
+                "INSERT INTO idempotency_records (scope, key, request_digest, status, created_at)"
+                " VALUES (?,?,?,'in_progress',?)",
+                (scope, key, digest, db.utcnow()),
+            )
+    except _sqlite.IntegrityError as exc:
+        # 并发同键：另一请求已先登记
+        raise ApiError(
+            409,
+            "REQUEST_IN_PROGRESS",
+            "同键请求正在处理中，请稍后用同一键重试",
+            {"idempotency_key": key},
+        ) from exc
 
 
 def abort(scope: str, key: str) -> None:

@@ -317,6 +317,18 @@ def _review_flow(run_id: str, task_id: str, *, reference_text: str) -> int:
                 (run_id,),
             )
         return 1
+    except Exception as exc:  # 非模型类异常同样进 review_failed，不允许卡死在 ai_reviewing
+        info = _error_info(
+            "INTERNAL_ERROR", f"审核执行异常：{type(exc).__name__}", ref=run_id
+        )
+        _set_task_status(task_id, "review_failed", last_error=info)
+        with db.tx() as c:
+            c.execute(
+                "UPDATE runs SET progress_completed=progress_completed+1,"
+                " progress_failed=progress_failed+1 WHERE id=?",
+                (run_id,),
+            )
+        return 1
 
     now = db.utcnow()
     with db.tx() as c:
@@ -442,12 +454,12 @@ def _execute_generate_batch(run_id: str) -> None:
             (json.dumps(task_ids), run_id),
         )
 
+    _update_run(run_id, stage="reviewing")
     failed = 0
     for task_id in task_ids:
         failed += _review_flow(run_id, task_id, reference_text=reference)
 
     _release_tasks(task_ids)
-    _update_run(run_id, stage="reviewing")  # 进入终态前推进阶段视图
     _finish_run(run_id, failed=failed, stage="done" if failed == 0 else "reviewing")
 
 
@@ -501,6 +513,7 @@ def _execute_task_run(run_id: str) -> None:
                 "UPDATE tasks SET status='pending_review', updated_at=? WHERE id=?",
                 (db.utcnow(), task_id),
             )
+        _update_run(run_id, stage="reviewing")
     else:
         _update_run(run_id, stage="validating")
         version = conn.execute(
@@ -511,11 +524,14 @@ def _execute_task_run(run_id: str) -> None:
             snapshot["task_mode"],
             snapshot["rule_snapshot_id"],
         )
-        with db.tx() as c:
-            c.execute(
-                "UPDATE task_versions SET validation_json=? WHERE id=?",
-                (json.dumps(report, ensure_ascii=False), version["id"]),
-            )
+        if json.dumps(report, ensure_ascii=False) != version["validation_json"]:
+            # 版本报告原则上不可变；快照脚本变化导致结果不同才更新
+            with db.tx() as c:
+                c.execute(
+                    "UPDATE task_versions SET validation_json=? WHERE id=?",
+                    (json.dumps(report, ensure_ascii=False), version["id"]),
+                )
+        _update_run(run_id, stage="reviewing")
 
     failed = _review_flow(run_id, task_id, reference_text=reference)
     _release_tasks([task_id])
@@ -547,11 +563,26 @@ def _release_run_tasks(run_id: str) -> None:
         rows = conn.execute(
             "SELECT id FROM tasks WHERE busy_run_id=?", (run_id,)
         ).fetchall()
+        now = db.utcnow()
         for r in rows:
+            # 异常兜底路径：仍处于 ai_reviewing 的任务没有正常出口，统一转 review_failed
             conn.execute(
-                "UPDATE tasks SET busy_run_id=NULL, revision=revision+1, updated_at=?"
+                "UPDATE tasks SET busy_run_id=NULL, revision=revision+1, updated_at=?,"
+                " status=CASE WHEN status='ai_reviewing' THEN 'review_failed' ELSE status END,"
+                " last_error_json=CASE WHEN status='ai_reviewing' THEN ? ELSE last_error_json END"
                 " WHERE id=?",
-                (db.utcnow(), r["id"]),
+                (
+                    now,
+                    json.dumps(
+                        _error_info(
+                            "RUN_INTERRUPTED",
+                            "作业异常中断；请手动重新审核或重写",
+                            ref=run_id,
+                        ),
+                        ensure_ascii=False,
+                    ),
+                    r["id"],
+                ),
             )
 
 
@@ -564,23 +595,33 @@ def start_worker(app: Any) -> None:
 
     def loop() -> None:
         import time
+        import traceback
 
         while True:
+            run_id = None
             try:
                 with db.tx() as conn:
                     row = conn.execute(
                         "SELECT id FROM runs WHERE status='queued'"
                         " ORDER BY created_at ASC, id ASC LIMIT 1"
                     ).fetchone()
-                if row is None:
+                    run_id = row["id"] if row else None
+                if run_id is None:
                     _wake.wait(0.3)
                     _wake.clear()
                     continue
-                execute_queued_run(row["id"])
+                execute_queued_run(run_id)
             except Exception:
-                import traceback
-
                 traceback.print_exc()
+                if run_id is not None:
+                    try:
+                        _fail_run(
+                            run_id,
+                            ApiError(500, "INTERNAL_ERROR", "作业执行器异常退出"),
+                        )
+                        _release_run_tasks(run_id)
+                    except Exception:
+                        traceback.print_exc()
                 time.sleep(1)
 
     _worker = threading.Thread(target=loop, name="g2-run-worker", daemon=True)
@@ -603,7 +644,19 @@ def recover_interrupted() -> dict[str, int]:
         run_ids = {r["id"] for r in runs}
         for r in runs:
             conn.execute(
-                "UPDATE runs SET status='interrupted', finished_at=? WHERE id=?", (now, r["id"])
+                "UPDATE runs SET status='interrupted', finished_at=?, error_json=? WHERE id=?",
+                (
+                    now,
+                    json.dumps(
+                        _error_info(
+                            "RUN_INTERRUPTED",
+                            "服务重启中断了本次作业；请手动重新审核或重写",
+                            ref=r["id"],
+                        ),
+                        ensure_ascii=False,
+                    ),
+                    r["id"],
+                ),
             )
         tasks_fixed = 0
         for t in conn.execute("SELECT id FROM tasks WHERE busy_run_id IS NOT NULL").fetchall():

@@ -83,9 +83,8 @@ def create_batch(request: Request, payload: BatchCreate) -> Response:
             task_mode=payload.task_mode,
             reference_text=payload.reference_text,
             attachment_ids=payload.attachment_ids,
+            finish=finish,
         )
-        with db.tx() as conn:
-            finish(conn, 201, result)
         return 201, result
 
     return deps.run_idempotent("POST /api/v1/batches", request, payload, runner)

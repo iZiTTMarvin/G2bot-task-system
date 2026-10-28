@@ -59,13 +59,17 @@ export default function GeneratePage({ api }: Props) {
     }
   };
 
+  const inFlight = useRef(false);
   const pollRun = useCallback(
     (runId: string) => {
       stopPolling();
       timerRef.current = setInterval(async () => {
+        if (inFlight.current) return;
+        inFlight.current = true;
         try {
           const run = await api.getRun(runId);
           setActiveRun(run);
+          setRunError(null);
           if (run.status !== 'queued' && run.status !== 'running') {
             stopPolling();
             loadBatches();
@@ -83,6 +87,8 @@ export default function GeneratePage({ api }: Props) {
           }
         } catch {
           setRunError('状态读取失败，正在重试…');
+        } finally {
+          inFlight.current = false;
         }
       }, 2000);
     },
@@ -91,12 +97,31 @@ export default function GeneratePage({ api }: Props) {
 
   useEffect(() => stopPolling, []);
 
-  // 刷新后通过批次 latest_run_id 找回活动作业
+  // 刷新后通过批次 latest_run_id 找回活动作业并恢复轮询
   useEffect(() => {
-    const active = batches.find(
-      (b) => b.latest_run_id && Object.values(b.task_counts).some((v) => v > 0)
-    );
-    void active;
+    if (activeRun) return;
+    const candidates = batches.filter((b) => b.latest_run_id);
+    if (candidates.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      for (const b of candidates) {
+        try {
+          const run = await api.getRun(b.latest_run_id!);
+          if (cancelled) return;
+          if (run.status === 'queued' || run.status === 'running') {
+            setActiveRun(run);
+            pollRun(run.id);
+            return;
+          }
+        } catch {
+          /* 单个作业读取失败继续尝试其余批次 */
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batches]);
 
   const onCreate = async (values: {

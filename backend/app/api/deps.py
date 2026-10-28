@@ -18,7 +18,9 @@ Runner = Callable[[FinishFn], tuple[int, Any]]
 
 def require_local_host(request: Request) -> None:
     """上传接口的 Origin/Host 防护：仅接受本地主机发起的请求。"""
-    host = (request.headers.get("host") or "").split(":")[0].lower()
+    host = (request.headers.get("host") or "")
+    host = host.rsplit(":", 1)[0] if not host.startswith("[") else host.split("]")[0] + "]"
+    host = host.lower().strip("[]")
     if host not in LOCAL_HOSTS:
         raise ApiError(403, "FORBIDDEN", "上传接口仅接受本地请求")
     origin = request.headers.get("origin")
