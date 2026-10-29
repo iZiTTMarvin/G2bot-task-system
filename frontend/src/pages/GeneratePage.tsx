@@ -1,317 +1,366 @@
-// 任务生成页：批次表单 + 最近批次 + 作业进度轮询（2s，终态停止）。
 import {
-  Alert, Button, Card, Col, Form, Input, InputNumber, Radio, Row, Select, Space, Table, Tag, Typography, message,
+  Alert,
+  Button,
+  Empty,
+  Input,
+  InputNumber,
+  Progress,
+  Select,
+  Spin,
+  Tag,
+  Upload,
+  message,
 } from 'antd';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ApiClient } from '../api/client';
 import { newIdempotencyKey } from '../api/client';
-import { ApiError } from '../api/errors';
-import type { AttachmentSummary, Batch, Run } from '../api/types';
+import type { ApiError } from '../api/errors';
+import type { AttachmentSummary, Batch, Run, TaskSummary } from '../api/types';
+import { STATUS_LABEL } from '../api/types';
+import TaskDrawer from '../components/TaskDrawer';
 
 interface Props {
   api: ApiClient;
 }
 
 const STAGE_LABEL: Record<Run['stage'], string> = {
-  queued: '排队中',
-  generating: '生成中',
-  validating: '规则校验中',
-  reviewing: 'AI 审核中',
-  done: '已完成',
-};
-
-const STATUS_LABEL: Record<Run['status'], string> = {
-  queued: '排队中',
-  running: '运行中',
-  succeeded: '成功',
-  failed: '失败',
-  interrupted: '已中断',
+  queued: '等待生成',
+  generating: 'AI 正在命名并生成任务',
+  validating: '正在校验任务',
+  reviewing: 'AI 正在审核任务',
+  done: '生成完成',
 };
 
 export default function GeneratePage({ api }: Props) {
-  const [form] = Form.useForm();
+  const [prompt, setPrompt] = useState('');
+  const [taskCount, setTaskCount] = useState(3);
+  const [taskMode, setTaskMode] = useState<'standard' | 'long'>('standard');
   const [attachments, setAttachments] = useState<AttachmentSummary[]>([]);
+  const [attachmentIds, setAttachmentIds] = useState<string[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
-  const [creating, setCreating] = useState(false);
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+  const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [activeRun, setActiveRun] = useState<Run | null>(null);
-  const [runError, setRunError] = useState<string | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadTasks = useCallback(
+    async (batchId: string) => {
+      try {
+        const result = await api.listTasks({ batch_id: batchId, page_size: 100 });
+        setTasks([...result.items].sort((a, b) => a.seq - b.seq));
+      } catch (cause) {
+        setError((cause as ApiError).message);
+      }
+    },
+    [api]
+  );
 
   const loadBatches = useCallback(async () => {
-    try {
-      const r = await api.listBatches(1, 20);
-      setBatches(r.items);
-      return r.items;
-    } catch {
-      return [];
-    }
+    const result = await api.listBatches(1, 100);
+    setBatches(result.items);
+    return result.items;
   }, [api]);
 
   useEffect(() => {
-    api.listAttachments(1, 100).then((r) => setAttachments(r.items)).catch(() => {});
-    loadBatches();
-  }, [api, loadBatches]);
-
-  const stopPolling = () => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  };
-
-  const inFlight = useRef(false);
-  const pollRun = useCallback(
-    (runId: string) => {
-      stopPolling();
-      timerRef.current = setInterval(async () => {
-        if (inFlight.current) return;
-        inFlight.current = true;
-        try {
-          const run = await api.getRun(runId);
-          setActiveRun(run);
-          setRunError(null);
-          if (run.status !== 'queued' && run.status !== 'running') {
-            stopPolling();
-            loadBatches();
-            if (run.status === 'failed') {
-              message.warning(
-                run.error?.code === 'MODEL_TIMEOUT'
-                  ? '部分任务审核失败，其余结果已保留'
-                  : `作业失败：${run.error?.message ?? '未知错误'}`
-              );
-            } else if (run.status === 'interrupted') {
-              message.warning('作业被服务重启中断，相关任务转为「审核失败」，可手动重审');
-            } else {
-              message.success('批次生成与审核完成，请到「人工审核」处理');
-            }
-          }
-        } catch {
-          setRunError('状态读取失败，正在重试…');
-        } finally {
-          inFlight.current = false;
-        }
-      }, 2000);
-    },
-    [api, loadBatches]
-  );
-
-  useEffect(() => stopPolling, []);
-
-  // 刷新后通过批次 latest_run_id 找回活动作业并恢复轮询
-  useEffect(() => {
-    if (activeRun) return;
-    const candidates = batches.filter((b) => b.latest_run_id);
-    if (candidates.length === 0) return;
     let cancelled = false;
-    (async () => {
-      for (const b of candidates) {
-        try {
-          const run = await api.getRun(b.latest_run_id!);
-          if (cancelled) return;
+    async function initialize() {
+      try {
+        const [attachmentPage, batchItems] = await Promise.all([
+          api.listAttachments(1, 100),
+          loadBatches(),
+        ]);
+        if (cancelled) return;
+        setAttachments(attachmentPage.items);
+        const current = batchItems[0];
+        if (current) setSelectedBatchId(current.id);
+        for (const batch of batchItems) {
+          if (!batch.latest_run_id) continue;
+          const run = await api.getRun(batch.latest_run_id);
           if (run.status === 'queued' || run.status === 'running') {
-            setActiveRun(run);
-            pollRun(run.id);
-            return;
+            if (!cancelled) {
+              setSelectedBatchId(batch.id);
+              setActiveRun(run);
+            }
+            break;
           }
-        } catch {
-          /* 单个作业读取失败继续尝试其余批次 */
         }
+      } catch (cause) {
+        if (!cancelled) setError((cause as ApiError).message);
       }
-    })();
+    }
+    void initialize();
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [batches]);
+  }, [api, loadBatches]);
 
-  const onCreate = async (values: {
-    name: string;
-    goal: string;
-    task_count: number;
-    task_mode: 'standard' | 'long';
-    reference_text?: string;
-    attachment_ids?: string[];
-  }) => {
-    setCreating(true);
+  useEffect(() => {
+    if (!selectedBatchId) return;
+    let cancelled = false;
+    api.listTasks({ batch_id: selectedBatchId, page_size: 100 })
+      .then((result) => {
+        if (!cancelled) setTasks([...result.items].sort((a, b) => a.seq - b.seq));
+      })
+      .catch((cause) => {
+        if (!cancelled) setError((cause as ApiError).message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, selectedBatchId]);
+
+  const refreshRunResults = useCallback(
+    async (batchId: string) => {
+      await Promise.all([loadBatches(), loadTasks(batchId)]);
+    },
+    [loadBatches, loadTasks]
+  );
+
+  useEffect(() => {
+    if (!activeRun || (activeRun.status !== 'queued' && activeRun.status !== 'running')) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const run = await api.getRun(activeRun.id);
+        if (cancelled) return;
+        setActiveRun(run);
+        if (run.status !== 'queued' && run.status !== 'running') {
+          await refreshRunResults(activeRun.batch_id);
+          if (run.status === 'succeeded') message.success('任务集已生成');
+        }
+      } catch (cause) {
+        if (!cancelled) {
+          setError((cause as ApiError).message);
+          setActiveRun({ ...activeRun });
+        }
+      }
+    }, 1200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [activeRun, api, refreshRunResults]);
+
+  const upload = async (file: File) => {
+    setUploading(true);
+    setError(null);
+    try {
+      const attachment = await api.uploadAttachment(file);
+      setAttachments((current) => [attachment, ...current]);
+      setAttachmentIds((current) => [...current, attachment.id]);
+    } catch (cause) {
+      setError((cause as ApiError).message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const startBatch = async (batchId: string) => {
+    const run = await api.generateBatch(batchId, newIdempotencyKey());
+    setActiveRun(run);
+    setError(null);
+  };
+
+  const generate = async () => {
+    if (!prompt.trim()) return;
+    setGenerating(true);
+    setError(null);
     try {
       const batch = await api.createBatch(
         {
-          name: values.name,
-          goal: values.goal,
-          task_count: values.task_count,
-          task_mode: values.task_mode,
-          reference_text: values.reference_text ?? '',
-          attachment_ids: values.attachment_ids ?? [],
+          goal: prompt.trim(),
+          task_count: taskCount,
+          task_mode: taskMode,
+          reference_text: '',
+          attachment_ids: attachmentIds,
         },
         newIdempotencyKey()
       );
-      message.success('批次已创建（未调用模型）');
-      await loadBatches();
-      return batch;
-    } catch (e) {
-      message.error(`${(e as ApiError).message}（${(e as ApiError).code}）`);
-      return null;
+      setBatches((current) => [batch, ...current]);
+      setSelectedBatchId(batch.id);
+      setTasks([]);
+      await startBatch(batch.id);
+      setPrompt('');
+    } catch (cause) {
+      setError((cause as ApiError).message);
     } finally {
-      setCreating(false);
+      setGenerating(false);
     }
   };
 
-  const onCreateAndGenerate = async () => {
-    const values = await form.validateFields();
-    const batch = await onCreate(values);
-    if (!batch) return;
-    try {
-      const run = await api.generateBatch(batch.id, newIdempotencyKey());
-      setActiveRun(run);
-      setRunError(null);
-      pollRun(run.id);
-      message.info('已开始生成；页面关闭不会取消后台作业');
-    } catch (e) {
-      const err = e as ApiError;
-      message.error(`${err.message}（${err.code}）`);
-    }
-  };
-
-  const onGenerate = async (batchId: string) => {
-    try {
-      const run = await api.generateBatch(batchId, newIdempotencyKey());
-      setActiveRun(run);
-      setRunError(null);
-      pollRun(run.id);
-    } catch (e) {
-      message.error(`${(e as ApiError).message}（${(e as ApiError).code}）`);
-    }
-  };
-
+  const selectedBatch = batches.find((batch) => batch.id === selectedBatchId) ?? null;
   const runActive = activeRun?.status === 'queued' || activeRun?.status === 'running';
+  const progress = activeRun
+    ? Math.round((activeRun.progress.completed / Math.max(activeRun.progress.total, 1)) * 100)
+    : 0;
 
   return (
-    <Row gutter={16}>
-      <Col span={12}>
-        <Card title="创建批次" size="small">
-          <Form
-            form={form}
-            layout="vertical"
-            initialValues={{ task_count: 3, task_mode: 'long', reference_text: '', attachment_ids: [] }}
+    <div className="generate-page">
+      <section className="prompt-panel">
+        <Input.TextArea
+          className="prompt-input"
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
+          placeholder="告诉 AI 要生成什么任务，例如场景、数量、步骤要求和限制。"
+          autoSize={{ minRows: 4, maxRows: 9 }}
+          maxLength={10000}
+          disabled={generating || runActive}
+        />
+        <div className="prompt-toolbar">
+          <div className="prompt-tools">
+            <Upload
+              accept=".txt,.md,.csv,.xlsx"
+              showUploadList={false}
+              beforeUpload={(file) => {
+                void upload(file);
+                return false;
+              }}
+              disabled={uploading || runActive}
+            >
+              <Button loading={uploading}>上传场景库 / 物料库</Button>
+            </Upload>
+            <Select
+              className="attachment-select"
+              mode="multiple"
+              allowClear
+              value={attachmentIds}
+              onChange={setAttachmentIds}
+              placeholder="选择附件（可选）"
+              options={attachments.map((attachment) => ({
+                value: attachment.id,
+                label: attachment.filename,
+              }))}
+            />
+            <InputNumber
+              min={1}
+              max={10}
+              value={taskCount}
+              onChange={(value) => setTaskCount(value ?? 3)}
+              addonAfter="条"
+              disabled={runActive}
+            />
+            <Select
+              value={taskMode}
+              onChange={setTaskMode}
+              disabled={runActive}
+              options={[
+                { value: 'standard', label: '10–20 步' },
+                { value: 'long', label: '20–30 步' },
+              ]}
+            />
+          </div>
+          <Button
+            type="primary"
+            size="large"
+            onClick={generate}
+            loading={generating}
+            disabled={!prompt.trim() || runActive}
           >
-            <Form.Item name="name" label="批次名" rules={[{ required: true, message: '请填写批次名' }]}>
-              <Input maxLength={100} placeholder="如：居家长任务试跑" />
-            </Form.Item>
-            <Form.Item name="goal" label="目标要求" rules={[{ required: true, message: '请填写目标' }]}>
-              <Input.TextArea
-                maxLength={10000}
-                autoSize={{ minRows: 2, maxRows: 6 }}
-                placeholder="围绕一次真实居家活动设计任务，遵守当前 G2 规则"
-              />
-            </Form.Item>
-            <Space size="large" wrap>
-              <Form.Item name="task_count" label="任务数量（1–10）">
-                <InputNumber min={1} max={10} />
-              </Form.Item>
-              <Form.Item name="task_mode" label="任务模式">
-                <Radio.Group
-                  options={[
-                    { value: 'standard', label: '普通（10–20 步）' },
-                    { value: 'long', label: '长任务（20–30 步）' },
-                  ]}
-                  optionType="button"
-                />
-              </Form.Item>
-            </Space>
-            <Form.Item name="reference_text" label="粘贴资料（可选，与附件至少一项）">
-              <Input.TextArea
-                maxLength={80000}
-                autoSize={{ minRows: 2, maxRows: 4 }}
-                placeholder="台面物料包括收纳篮、带拉链的收纳袋、毛巾；按附件中的实际库存设计。"
-              />
-            </Form.Item>
-            <Form.Item name="attachment_ids" label="选择资料附件">
-              <Select
-                mode="multiple"
-                allowClear
-                placeholder="选择「资料」页上传的附件"
-                options={attachments.map((a) => ({
-                  value: a.id,
-                  label: `${a.filename}（${a.text_length} 字）`,
-                }))}
-              />
-            </Form.Item>
-            <Space>
-              <Button onClick={() => form.validateFields().then(onCreate)} loading={creating}>
-                仅创建批次
+            生成
+          </Button>
+        </div>
+      </section>
+
+      {error && (
+        <Alert
+          className="page-alert"
+          type="error"
+          showIcon
+          message={error}
+          closable
+          onClose={() => setError(null)}
+        />
+      )}
+
+      {activeRun && activeRun.batch_id === selectedBatchId && (
+        <section className="run-panel">
+          <div className="run-heading">
+            <span>
+              {runActive
+                ? STAGE_LABEL[activeRun.stage]
+                : activeRun.status === 'succeeded'
+                  ? STAGE_LABEL.done
+                  : '生成失败'}
+            </span>
+            {runActive && <Spin size="small" />}
+          </div>
+          {runActive && <Progress percent={progress} showInfo={false} />}
+          {activeRun.error && <Alert type="error" showIcon message={activeRun.error.message} />}
+        </section>
+      )}
+
+      <div className="collection-workspace">
+        <aside className="collection-sidebar">
+          <div className="section-heading">任务集</div>
+          <div className="collection-list">
+            {batches.map((batch) => {
+              const total = Object.values(batch.task_counts).reduce((sum, count) => sum + count, 0);
+              return (
+                <button
+                  type="button"
+                  key={batch.id}
+                  className={`collection-item${batch.id === selectedBatchId ? ' is-active' : ''}`}
+                  onClick={() => setSelectedBatchId(batch.id)}
+                >
+                  <span className="collection-name">{batch.name ?? '未命名任务集'}</span>
+                  <span className="collection-meta">
+                    {total} 条 · {new Date(batch.created_at).toLocaleDateString()}
+                  </span>
+                </button>
+              );
+            })}
+            {batches.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务集" />}
+          </div>
+        </aside>
+
+        <section className="task-panel">
+          <div className="task-panel-heading">
+            <div>
+              <div className="section-heading">{selectedBatch?.name ?? '任务'}</div>
+              {selectedBatch && <div className="task-goal">{selectedBatch.goal}</div>}
+            </div>
+            {selectedBatch?.can_generate && !runActive && (
+              <Button onClick={() => startBatch(selectedBatch.id).catch((cause) => setError((cause as ApiError).message))}>
+                生成
               </Button>
-              <Button type="primary" onClick={onCreateAndGenerate} loading={creating || runActive}>
-                创建并开始生成
-              </Button>
-            </Space>
-          </Form>
-        </Card>
-      </Col>
-      <Col span={12}>
-        {activeRun && (
-          <Card size="small" title="当前作业" style={{ marginBottom: 16 }}>
-            <Space wrap>
-              <Tag color={activeRun.status === 'failed' ? 'red' : activeRun.status === 'succeeded' ? 'green' : 'processing'}>
-                {STATUS_LABEL[activeRun.status]}
-              </Tag>
-              <Tag>{STAGE_LABEL[activeRun.stage]}</Tag>
-              <span>
-                进度：{activeRun.progress.completed}/{activeRun.progress.total}
-                {activeRun.progress.failed > 0 && (
-                  <span style={{ color: '#cf1322' }}>（失败 {activeRun.progress.failed}）</span>
-                )}
-              </span>
-            </Space>
-            {activeRun.error && (
-              <Alert
-                style={{ marginTop: 8 }}
-                type={activeRun.progress.failed > 0 && activeRun.progress.completed > activeRun.progress.failed ? 'warning' : 'error'}
-                showIcon
-                message={`${activeRun.error.code}：${activeRun.error.message}`}
-                description={activeRun.progress.failed > 0 ? '部分结果已保留，可在「人工审核」查看' : undefined}
-              />
             )}
-            {runError && <Alert style={{ marginTop: 8 }} type="warning" showIcon message={runError} />}
-          </Card>
-        )}
-        <Card title="最近批次" size="small">
-          <Table
-            rowKey="id"
-            size="small"
-            dataSource={batches}
-            pagination={false}
-            columns={[
-              { title: '批次', dataIndex: 'name', ellipsis: true },
-              { title: '模式', dataIndex: 'task_mode', width: 70, render: (m: string) => (m === 'long' ? '长' : '普通') },
-              {
-                title: '任务计数',
-                dataIndex: 'task_counts',
-                width: 200,
-                render: (c: Batch['task_counts']) => (
-                  <Typography.Text style={{ fontSize: 12 }}>
-                    待人工 {c.human_pending} / 退回 {c.ai_rejected} / 失败 {c.review_failed} / 通过 {c.approved}
-                  </Typography.Text>
-                ),
-              },
-              {
-                title: '操作',
-                width: 110,
-                render: (_: unknown, b: Batch) => (
-                  <Button
-                    size="small"
-                    type="primary"
-                    ghost
-                    disabled={!b.can_generate || runActive}
-                    onClick={() => onGenerate(b.id)}
-                  >
-                    {b.can_generate ? '开始生成' : '已生成'}
-                  </Button>
-                ),
-              },
-            ]}
-          />
-        </Card>
-      </Col>
-    </Row>
+          </div>
+          <div className="task-list">
+            {tasks.map((task) => (
+              <button
+                type="button"
+                className="task-row"
+                key={task.id}
+                onClick={() => setOpenTaskId(task.id)}
+              >
+                <span className="task-index">{String(task.seq).padStart(2, '0')}</span>
+                <span className="task-name">{task.name}</span>
+                <span className="task-steps">{task.step_count} 步</span>
+                <Tag>{STATUS_LABEL[task.status]}</Tag>
+              </button>
+            ))}
+            {tasks.length === 0 && !runActive && (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务" />
+            )}
+          </div>
+        </section>
+      </div>
+
+      <TaskDrawer
+        key={openTaskId ?? 'closed'}
+        api={api}
+        taskId={openTaskId}
+        onClose={() => setOpenTaskId(null)}
+        onUpdated={() => {
+          if (selectedBatchId) {
+            void loadTasks(selectedBatchId);
+            void loadBatches();
+          }
+        }}
+      />
+    </div>
   );
 }

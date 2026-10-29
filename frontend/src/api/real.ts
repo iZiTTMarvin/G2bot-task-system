@@ -35,7 +35,6 @@ async function request<T>(
   try {
     resp = await fetch(`/api/v1${path}`, { method, headers, body });
   } catch {
-    const { ApiError } = await import('./errors');
     throw new ApiError('NETWORK_ERROR', '网络请求失败：服务未启动或已断开', {});
   }
   if (resp.status === 204) return undefined as T;

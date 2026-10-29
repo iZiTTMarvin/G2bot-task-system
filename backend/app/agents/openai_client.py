@@ -118,7 +118,7 @@ class OpenAIModelClient:
 
     def generate_batch(
         self, *, goal: str, task_count: int, task_mode: str, reference_text: str
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         lo, hi = STEP_RANGES[task_mode]
         user = json.dumps(
             {
@@ -133,16 +133,19 @@ class OpenAIModelClient:
             model=self.generation_model, system=generator_prompt(task_mode, lo, hi), user=user
         )
         data = _extract_json(text)
-        if not isinstance(data, list):
-            raise ModelCallError("MODEL_PROTOCOL_ERROR", "生成结果不是 JSON 数组")
-        tasks = [self._coerce_task(item) for item in data]
+        if not isinstance(data, dict) or not isinstance(data.get("tasks"), list):
+            raise ModelCallError("MODEL_PROTOCOL_ERROR", "生成结果缺少任务集名称或任务数组")
+        name = str(data.get("name", "")).strip()
+        if not name:
+            raise ModelCallError("MODEL_PROTOCOL_ERROR", "任务集名称不能为空")
+        tasks = [self._coerce_task(item) for item in data["tasks"]]
         if len(tasks) != task_count:
             raise ModelCallError(
                 "MODEL_PROTOCOL_ERROR",
                 f"要求生成 {task_count} 条任务，模型返回 {len(tasks)} 条",
                 {"expected": task_count, "actual": len(tasks)},
             )
-        return tasks
+        return {"name": name, "tasks": tasks}
 
     def revise_task(
         self,
@@ -168,6 +171,8 @@ class OpenAIModelClient:
             model=self.generation_model, system=generator_prompt(task_mode, lo, hi), user=user
         )
         data = _extract_json(text)
+        if isinstance(data, dict) and "tasks" in data:
+            data = data["tasks"]
         if isinstance(data, list):
             if len(data) != 1:
                 raise ModelCallError("MODEL_PROTOCOL_ERROR", "重写应只返回一条任务")

@@ -11,7 +11,7 @@ class StrictModel(BaseModel):
 class SettingsUpdate(StrictModel):
     base_url: str = Field(min_length=1, max_length=2000)
     generation_model: str = Field(min_length=1, max_length=200)
-    review_model: str = Field(min_length=1, max_length=200)
+    review_model: str | None = Field(default=None, min_length=1, max_length=200)
     api_key: str | None = Field(default=None, min_length=1, max_length=4096)
 
 
@@ -27,7 +27,7 @@ class TaskContentIn(StrictModel):
 
 
 class BatchCreate(StrictModel):
-    name: str = Field(min_length=1, max_length=100)
+    name: str | None = Field(default=None, max_length=100)
     goal: str = Field(min_length=1, max_length=10000)
     task_count: int = Field(default=3, ge=1, le=10)
     task_mode: str = Field(default="long", pattern="^(standard|long)$")

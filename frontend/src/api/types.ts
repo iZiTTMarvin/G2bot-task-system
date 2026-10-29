@@ -94,6 +94,7 @@ export interface HumanDecision {
 export interface TaskSummary {
   id: string;
   batch_id: string;
+  seq: number;
   name: string;
   step_count: number;
   version_no: number;
@@ -172,7 +173,7 @@ export interface AttachmentPage {
 
 export interface Batch {
   id: string;
-  name: string;
+  name: string | null;
   goal: string;
   task_count: number;
   task_mode: TaskMode;

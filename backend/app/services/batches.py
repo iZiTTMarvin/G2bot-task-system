@@ -30,7 +30,7 @@ def _ensure_rule_snapshot(conn: Any) -> str:
 
 def create(
     *,
-    name: str,
+    name: str | None,
     goal: str,
     task_count: int,
     task_mode: str,
@@ -38,15 +38,11 @@ def create(
     attachment_ids: list[str],
     finish=None,
 ) -> dict[str, Any]:
-    name = name.strip()
+    name = (name or "").strip()
     goal = goal.strip()
     reference_text = (reference_text or "").strip()
-    if not name:
-        raise validation_error("批次名不能为空", ["name"])
     if not goal:
-        raise validation_error("目标不能为空", ["goal"])
-    if not reference_text and not attachment_ids:
-        raise validation_error("参考资料文本与附件至少提供一项", ["reference_text"])
+        raise validation_error("要求不能为空", ["goal"])
     if len(set(attachment_ids)) != len(attachment_ids):
         raise validation_error("附件列表存在重复", ["attachment_ids"])
 

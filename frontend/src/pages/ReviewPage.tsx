@@ -1,11 +1,8 @@
-// 人工审核页：状态页签（服务端全量计数）+ 表格 + 详情抽屉 + 已通过导出。
-import {
-  Alert, Button, Input, Pagination, Select, Space, Spin, Table, Tabs, Tag, Typography, message,
-} from 'antd';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Button, Input, Pagination, Select, Table, Tag, message } from 'antd';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ApiClient } from '../api/client';
 import { newIdempotencyKey } from '../api/client';
-import { ApiError } from '../api/errors';
+import type { ApiError } from '../api/errors';
 import type { Batch, TaskPage, TaskStatus, TaskSummary } from '../api/types';
 import { STATUS_LABEL, STATUS_ORDER } from '../api/types';
 import TaskDrawer from '../components/TaskDrawer';
@@ -17,255 +14,184 @@ interface Props {
 export default function ReviewPage({ api }: Props) {
   const [page, setPage] = useState<TaskPage | null>(null);
   const [batches, setBatches] = useState<Batch[]>([]);
-  const [status, setStatus] = useState<TaskStatus>('human_pending');
+  const [status, setStatus] = useState<TaskStatus | 'all'>('all');
   const [batchId, setBatchId] = useState<string | undefined>();
-  const [q, setQ] = useState('');
+  const [query, setQuery] = useState('');
   const [pageNum, setPageNum] = useState(1);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
-  const [selectedApproved, setSelectedApproved] = useState<string[]>([]);
+  const [selected, setSelected] = useState<string[]>([]);
   const [exporting, setExporting] = useState(false);
 
-  const reqSeq = useRef(0);
   const load = useCallback(async () => {
-    const seq = ++reqSeq.current;
-    setLoading(true);
-    setError(null);
     try {
-      const data = await api.listTasks({
-        status,
+      setPage(await api.listTasks({
+        status: status === 'all' ? undefined : status,
         batch_id: batchId,
-        q: q || undefined,
+        q: query || undefined,
         page: pageNum,
         page_size: 20,
-      });
-      if (seq !== reqSeq.current) return; // 过期响应丢弃
-      setPage(data);
-    } catch (e) {
-      if (seq !== reqSeq.current) return;
-      setError((e as ApiError).message ?? '列表读取失败');
-    } finally {
-      if (seq === reqSeq.current) setLoading(false);
+      }));
+      setError(null);
+    } catch (cause) {
+      setError((cause as ApiError).message);
     }
-  }, [api, status, batchId, q, pageNum]);
+  }, [api, batchId, pageNum, query, status]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    let cancelled = false;
+    api.listTasks({
+      status: status === 'all' ? undefined : status,
+      batch_id: batchId,
+      q: query || undefined,
+      page: pageNum,
+      page_size: 20,
+    })
+      .then((result) => {
+        if (!cancelled) {
+          setPage(result);
+          setError(null);
+        }
+      })
+      .catch((cause) => {
+        if (!cancelled) setError((cause as ApiError).message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, batchId, pageNum, query, status]);
 
   useEffect(() => {
-    api.listBatches(1, 100).then((r) => setBatches(r.items)).catch(() => {});
+    api.listBatches(1, 100).then((result) => setBatches(result.items)).catch(() => {});
   }, [api]);
 
-  // 后台作业活动时 2 秒轮询（待审/审核中计数>0 或当前页有占用；终态自然停止）
-  const activity =
-    (page?.status_counts.pending_review ?? 0) > 0 ||
-    (page?.status_counts.ai_reviewing ?? 0) > 0 ||
-    !!page?.items.some((t) => t.busy_run_id);
-  useEffect(() => {
-    if (!activity) return;
-    const timer = setInterval(load, 2000);
-    return () => clearInterval(timer);
-  }, [activity, load]);
-
-  const counts = page?.status_counts;
-
-  const doExport = async () => {
-    if (selectedApproved.length === 0) return;
-    const batchOf = page?.items.find((t) => t.id === selectedApproved[0])?.batch_id;
-    if (!batchOf) {
-      message.warning('所选任务不在当前列表中，请刷新后重新选择');
-      setSelectedApproved([]);
-      return;
-    }
-    if (selectedApproved.some((id) => page?.items.find((t) => t.id === id)?.batch_id !== batchOf)) {
-      message.warning('只能导出同一批次的任务');
-      return;
-    }
+  const exportSelected = async () => {
+    const first = page?.items.find((task) => task.id === selected[0]);
+    if (!first || !selected.length) return;
     setExporting(true);
     try {
-      const rec = await api.createExport(
-        { batch_id: batchOf, task_ids: selectedApproved },
+      const record = await api.createExport(
+        { batch_id: first.batch_id, task_ids: selected },
         newIdempotencyKey()
       );
-      const blob = await api.downloadExport(rec.download_url);
+      const blob = await api.downloadExport(record.download_url);
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = rec.filename;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
-      message.success(`已导出 ${rec.versions.length} 条任务`);
-      setSelectedApproved([]);
-    } catch (e) {
-      message.error(`${(e as ApiError).message}（${(e as ApiError).code}）`);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = record.filename;
+      link.click();
+      URL.revokeObjectURL(url);
+      setSelected([]);
+      message.success('已导出');
+    } catch (cause) {
+      message.error((cause as ApiError).message);
     } finally {
       setExporting(false);
     }
   };
 
-  const columns = useMemo(
-    () => [
-      { title: '任务名', dataIndex: 'name', key: 'name', ellipsis: true },
-      {
-        title: '批次',
-        dataIndex: 'batch_id',
-        key: 'batch',
-        width: 150,
-        ellipsis: true,
-        render: (id: string) => batches.find((b) => b.id === id)?.name ?? id.slice(0, 12),
-      },
-      { title: '步骤数', dataIndex: 'step_count', key: 'steps', width: 80 },
-      {
-        title: '状态',
-        dataIndex: 'status',
-        key: 'status',
-        width: 100,
-        render: (v: TaskStatus) => <Tag>{STATUS_LABEL[v]}</Tag>,
-      },
-      { title: '当前版本', dataIndex: 'version_no', key: 'version', width: 90, render: (v: number) => `v${v}` },
-      {
-        title: '人工修改',
-        dataIndex: 'human_edited',
-        key: 'human_edited',
-        width: 90,
-        render: (v: boolean) => (v ? <Tag color="blue">是</Tag> : <Tag>否</Tag>),
-      },
-      {
-        title: '更新时间',
-        dataIndex: 'updated_at',
-        key: 'updated_at',
-        width: 160,
-        render: (t: string) => new Date(t).toLocaleString(),
-      },
-      {
-        title: '操作',
-        key: 'action',
-        width: 90,
-        render: (_: unknown, record: TaskSummary) => (
-          <Button size="small" type="link" onClick={() => setOpenTaskId(record.id)}>
-            查看 / 审核
-          </Button>
-        ),
-      },
-    ],
-    [batches]
-  );
+  const columns = useMemo(() => [
+    { title: '任务', dataIndex: 'name', ellipsis: true },
+    {
+      title: '任务集',
+      dataIndex: 'batch_id',
+      width: 210,
+      ellipsis: true,
+      render: (id: string) => batches.find((batch) => batch.id === id)?.name ?? '未命名任务集',
+    },
+    { title: '步骤', dataIndex: 'step_count', width: 80 },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      width: 120,
+      render: (value: TaskStatus) => <Tag>{STATUS_LABEL[value]}</Tag>,
+    },
+    {
+      key: 'action',
+      width: 72,
+      render: (_: unknown, task: TaskSummary) => (
+        <Button type="link" onClick={() => setOpenTaskId(task.id)}>查看</Button>
+      ),
+    },
+  ], [batches]);
 
   return (
-    <div>
-      {error && (
-        <Alert
-          type="error"
-          showIcon
-          style={{ marginBottom: 12 }}
-          message="列表读取失败"
-          description={error}
-          action={
-            <Button size="small" onClick={load}>
-              重试
-            </Button>
-          }
+    <div className="review-page">
+      {error && <Alert type="error" showIcon message={error} action={<Button onClick={load}>重试</Button>} />}
+      <div className="review-toolbar">
+        <Select
+          value={status}
+          onChange={(value) => {
+            setStatus(value);
+            setPageNum(1);
+            setSelected([]);
+          }}
+          options={[
+            { value: 'all', label: '全部状态' },
+            ...STATUS_ORDER.map((value) => ({ value, label: STATUS_LABEL[value] })),
+          ]}
         />
-      )}
-      <Tabs
-        activeKey={status}
-        onChange={(key) => {
-          setStatus(key as TaskStatus);
-          setPageNum(1);
-          setSelectedApproved([]);
-        }}
-        items={STATUS_ORDER.map((s) => ({
-          key: s,
-          label: `${STATUS_LABEL[s]}${counts ? ` (${counts[s]})` : ''}`,
-        }))}
-      />
-      <Space style={{ marginBottom: 12 }} wrap>
         <Select
           allowClear
-          placeholder="按批次筛选"
-          style={{ width: 220 }}
+          placeholder="全部任务集"
           value={batchId}
-          onChange={(v) => {
-            setBatchId(v);
+          onChange={(value) => {
+            setBatchId(value);
             setPageNum(1);
-            setSelectedApproved([]);
+            setSelected([]);
           }}
-          options={batches.map((b) => ({ value: b.id, label: b.name }))}
+          options={batches.map((batch) => ({ value: batch.id, label: batch.name ?? '未命名任务集' }))}
         />
         <Input.Search
-          placeholder="按任务名搜索（字面包含）"
-          style={{ width: 260 }}
           allowClear
-          onSearch={(v) => {
-            setQ(v);
+          placeholder="搜索任务"
+          onSearch={(value) => {
+            setQuery(value);
             setPageNum(1);
-            setSelectedApproved([]);
+            setSelected([]);
           }}
         />
-        <Typography.Text type="secondary">
-          共 {page?.total ?? 0} 条（当前筛选）
-        </Typography.Text>
         {status === 'approved' && (
-          <Button
-            type="primary"
-            disabled={selectedApproved.length === 0}
-            loading={exporting}
-            onClick={doExport}
-          >
-            导出选中（{selectedApproved.length}）为 XLSX
+          <Button type="primary" disabled={!selected.length} loading={exporting} onClick={exportSelected}>
+            导出 XLSX{selected.length ? `（${selected.length}）` : ''}
           </Button>
         )}
-      </Space>
-
-      <Spin spinning={loading}>
-        <Table
-          rowKey="id"
-          size="middle"
-          columns={columns}
-          dataSource={page?.items ?? []}
-          pagination={false}
-          locale={{ emptyText: '暂无任务；可先到「任务生成」页创建批次并生成' }}
-          rowSelection={
-            status === 'approved'
-              ? {
-                  selectedRowKeys: selectedApproved,
-                  onChange: (keys) => setSelectedApproved(keys as string[]),
-                  getCheckboxProps: (record: TaskSummary) => ({
-                    disabled: record.status !== 'approved' || !!record.busy_run_id,
-                  }),
-                }
-              : undefined
-          }
-          onRow={(record) => ({
-            onClick: (e) => {
-              if ((e.target as HTMLElement).closest('button, input, .ant-checkbox')) return;
-              setOpenTaskId(record.id);
-            },
-            style: { cursor: 'pointer' },
-          })}
-        />
-      </Spin>
-      <div style={{ marginTop: 12, textAlign: 'right' }}>
-        <Pagination
-          current={pageNum}
-          pageSize={20}
-          total={page?.total ?? 0}
-          showSizeChanger={false}
-          onChange={(n) => {
-            setPageNum(n);
-            setSelectedApproved([]);
-          }}
-        />
       </div>
 
+      <Table
+        rowKey="id"
+        columns={columns}
+        dataSource={page?.items ?? []}
+        pagination={false}
+        rowSelection={status === 'approved' ? {
+          selectedRowKeys: selected,
+          onChange: (keys) => setSelected(keys as string[]),
+        } : undefined}
+        onRow={(task) => ({
+          onClick: (event) => {
+            if (!(event.target as HTMLElement).closest('button,input,.ant-checkbox')) setOpenTaskId(task.id);
+          },
+        })}
+      />
+      <Pagination
+        className="review-pagination"
+        current={pageNum}
+        pageSize={20}
+        total={page?.total ?? 0}
+        showSizeChanger={false}
+        onChange={(value) => {
+          setPageNum(value);
+          setSelected([]);
+        }}
+      />
+
       <TaskDrawer
+        key={openTaskId ?? 'closed'}
         api={api}
         taskId={openTaskId}
-        onClose={(changed) => {
+        onClose={() => {
           setOpenTaskId(null);
-          if (changed) load();
+          void load();
         }}
         onUpdated={load}
       />

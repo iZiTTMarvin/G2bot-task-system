@@ -8,7 +8,8 @@ __pycache__/
 venv/
 env/
 .python-version
-
+.commandcode
+.kilo
 # 测试与类型检查缓存
 .pytest_cache/
 .mypy_cache/

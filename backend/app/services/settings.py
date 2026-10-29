@@ -51,7 +51,7 @@ def _validate_base_url(url: str) -> str:
 
 def update_settings(payload: dict[str, Any]) -> dict[str, Any]:
     """PUT /settings。活动作业时调用方先检查 RUN_BUSY；此处只做格式校验。"""
-    for field in ("base_url", "generation_model", "review_model"):
+    for field in ("base_url", "generation_model"):
         value = payload.get(field)
         if not isinstance(value, str) or not value.strip():
             raise validation_error(f"{field} 不能为空", [field])
@@ -65,7 +65,8 @@ def update_settings(payload: dict[str, Any]) -> dict[str, Any]:
     s = _load()
     s["base_url"] = payload["base_url"].strip()
     s["generation_model"] = payload["generation_model"].strip()
-    s["review_model"] = payload["review_model"].strip()
+    review_model = payload.get("review_model")
+    s["review_model"] = (review_model or s["generation_model"]).strip()
     if api_key is not None:
         s["api_key"] = api_key
     CONFIG.config_dir.mkdir(parents=True, exist_ok=True)

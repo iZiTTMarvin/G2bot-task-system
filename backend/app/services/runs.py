@@ -383,12 +383,18 @@ def _execute_generate_batch(run_id: str) -> None:
 
     _update_run(run_id, stage="generating", status="running", started_at=db.utcnow())
     try:
-        raw_tasks = get_client().generate_batch(
+        generated = get_client().generate_batch(
             goal=snapshot["goal"],
             task_count=snapshot["task_count"],
             task_mode=snapshot["task_mode"],
             reference_text=reference,
         )
+        if not isinstance(generated, dict):
+            raise ModelCallError("MODEL_PROTOCOL_ERROR", "生成结果不是任务集对象")
+        collection_name = str(generated.get("name", "")).strip()
+        raw_tasks = generated.get("tasks")
+        if not collection_name or not isinstance(raw_tasks, list):
+            raise ModelCallError("MODEL_PROTOCOL_ERROR", "生成结果缺少任务集名称或任务数组")
         contents = [tasks_service.normalize_content(item) for item in raw_tasks]
         if len(contents) != snapshot["task_count"]:
             raise ModelCallError(
@@ -412,6 +418,7 @@ def _execute_generate_batch(run_id: str) -> None:
         if existing:
             raise invalid_state("批次已有任务，拒绝重复生成")
         now = db.utcnow()
+        c.execute("UPDATE batches SET name=? WHERE id=?", (collection_name, batch["id"]))
         for index, content in enumerate(contents, 1):
             task_id = ids.new_id("task")
             version_id = ids.new_id("ver")

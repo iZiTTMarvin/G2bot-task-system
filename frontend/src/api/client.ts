@@ -1,8 +1,7 @@
-// API 门面：mock 与真实服务实现同一接口；组件只依赖这里。
 import { ApiError } from './errors';
 
 export interface BatchCreateInput {
-  name: string;
+  name?: string;
   goal: string;
   task_count: number;
   task_mode: string;
@@ -16,7 +15,7 @@ export interface ApiClient {
   updateSettings(payload: {
     base_url: string;
     generation_model: string;
-    review_model: string;
+    review_model?: string;
     api_key?: string;
   }): Promise<import('./types').Settings>;
 

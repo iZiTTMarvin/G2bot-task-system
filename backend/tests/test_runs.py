@@ -21,6 +21,8 @@ class ScriptedClient(FakeModelClient):
         if self.gen_error:
             raise self.gen_error
         if self.gen_payload is not None:
+            if isinstance(self.gen_payload, list):
+                return {"name": "脚本任务集", "tasks": self.gen_payload}
             return self.gen_payload
         return super().generate_batch(**kw)
 
@@ -39,7 +41,7 @@ def _install(monkeypatch, client_obj):
 
 def _good_tasks(count: int, mode: str = "long") -> list[dict]:
     fake = FakeModelClient()
-    return fake.generate_batch(goal="g", task_count=count, task_mode=mode, reference_text="r")
+    return fake.generate_batch(goal="g", task_count=count, task_mode=mode, reference_text="r")["tasks"]
 
 
 # ---------- 生成作业 ----------
@@ -516,10 +518,10 @@ def test_export_formula_content_stays_text(client, monkeypatch):
 
     class EvilNames(FakeModelClient):
         def generate_batch(self, **kw):
-            tasks = super().generate_batch(**kw)
-            for t in tasks:
+            generated = super().generate_batch(**kw)
+            for t in generated["tasks"]:
                 t["name"] = '=HYPERLINK("http://evil","点我")'
-            return tasks
+            return generated
 
     from app.services import runs as runs_service
 

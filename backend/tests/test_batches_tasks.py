@@ -7,13 +7,13 @@ from tests.conftest import generate, make_batch
 # ---------- 批次 ----------
 
 def test_batch_create_validation(client):
-    # 无资料来源
+    # 无名称、无资料也可创建，名称由模型生成
     r = client.post(
         "/api/v1/batches",
-        json={"name": "b", "goal": "g"},
+        json={"goal": "生成 3 条居家桌面任务"},
         headers={"Idempotency-Key": "k1"},
     )
-    assert r.status_code == 422
+    assert r.status_code == 201 and r.json()["name"] is None
 
     # 附件不存在
     r = client.post(
@@ -72,6 +72,21 @@ def test_batch_snapshot_frozen(client):
 
     r = client.get("/api/v1/batches")
     assert r.json()["total"] == 1
+
+
+def test_generation_names_collection_and_tasks(client):
+    r = client.post(
+        "/api/v1/batches",
+        json={"goal": "生成 3 条居家桌面任务", "task_count": 3},
+        headers={"Idempotency-Key": "auto-name"},
+    )
+    batch = r.json()
+    run = generate(client, batch["id"])
+    assert run["status"] == "succeeded"
+    named = client.get(f"/api/v1/batches/{batch['id']}").json()
+    assert named["name"] == "居家桌面任务集"
+    tasks = client.get("/api/v1/tasks", params={"batch_id": batch["id"]}).json()["items"]
+    assert len(tasks) == 3 and all(t["name"] for t in tasks)
 
 
 # ---------- 任务列表 ----------

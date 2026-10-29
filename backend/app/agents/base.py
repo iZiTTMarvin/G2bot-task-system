@@ -13,8 +13,8 @@ from ..errors import ModelCallError
 class ModelClient(Protocol):
     def generate_batch(
         self, *, goal: str, task_count: int, task_mode: str, reference_text: str
-    ) -> list[dict[str, Any]]:
-        """返回 task_count 条任务正文（name/steps/materials）。结构非法抛 ModelCallError。"""
+    ) -> dict[str, Any]:
+        """返回任务集名称和 task_count 条任务正文。"""
 
     def revise_task(
         self,

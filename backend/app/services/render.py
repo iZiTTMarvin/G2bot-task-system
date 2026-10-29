@@ -59,7 +59,7 @@ def render_batch(conn: sqlite3.Row | sqlite3.Connection, row: sqlite3.Row) -> di
     ).fetchone()["n"]
     return {
         "id": batch_id,
-        "name": row["name"],
+        "name": row["name"] or None,
         "goal": row["goal"],
         "task_count": row["task_count"],
         "task_mode": row["task_mode"],
@@ -77,6 +77,7 @@ def render_task_summary(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "id": row["id"],
         "batch_id": row["batch_id"],
+        "seq": row["seq"],
         "name": row["name"],
         "step_count": row["step_count"],
         "version_no": row["current_version_no"],

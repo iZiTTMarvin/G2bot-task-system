@@ -53,9 +53,12 @@ def _content(index: int, name_suffix: str, mode: str, marker: str = "") -> dict[
 class FakeModelClient:
     def generate_batch(
         self, *, goal: str, task_count: int, task_mode: str, reference_text: str
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         marker = "模拟退回" if "退回" in goal else ""
-        return [_content(i + 1, "", task_mode, marker) for i in range(task_count)]
+        return {
+            "name": "居家桌面任务集",
+            "tasks": [_content(i + 1, "", task_mode, marker) for i in range(task_count)],
+        }
 
     def revise_task(
         self,

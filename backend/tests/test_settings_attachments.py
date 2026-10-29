@@ -44,6 +44,19 @@ def test_settings_default_and_update(client):
     }
 
 
+def test_settings_uses_generation_model_for_review_by_default(client):
+    r = client.put(
+        "/api/v1/settings",
+        json={
+            "base_url": "https://api.example.com/v1",
+            "generation_model": "one-model",
+            "api_key": "sk-demo",
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["review_model"] == "one-model"
+
+
 def test_settings_validation(client):
     # 空密钥拒绝
     r = client.put(
