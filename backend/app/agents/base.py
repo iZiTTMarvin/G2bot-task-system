@@ -1,7 +1,6 @@
 """Agent 入口：生成 Agent 与审核 Agent 的公共抽象。
 
-- get_client() 是唯一工厂：正式通路用 OpenAI 兼容 HTTP；测试替换此函数。
-- Deep Agents 封装在 deepagents_runner.py（可选，需依赖与真实凭据验证）。
+- get_client() 是唯一工厂：正式通路用 OpenAI / Anthropic 兼容 HTTP；测试替换此函数。
 """
 from __future__ import annotations
 
@@ -30,7 +29,7 @@ class ModelClient(Protocol):
     def review_task(
         self, *, content: dict[str, Any], task_mode: str, reference_text: str
     ) -> dict[str, Any]:
-        """返回 {"verdict": "pass"|"needs_changes", "issues": [...], "summary": str}。"""
+        """返回 verdict、issues、summary，可附 optimized_task 完整优化正文。"""
 
 
 def get_client() -> ModelClient:

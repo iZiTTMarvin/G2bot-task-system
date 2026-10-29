@@ -1,6 +1,8 @@
 """请求体模型：全部 extra="forbid"，未知字段直接 422（防拼错静默忽略）。"""
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -9,6 +11,7 @@ class StrictModel(BaseModel):
 
 
 class SettingsUpdate(StrictModel):
+    api_format: Literal["openai", "anthropic"] = "openai"
     base_url: str = Field(min_length=1, max_length=2000)
     generation_model: str = Field(min_length=1, max_length=200)
     review_model: str | None = Field(default=None, min_length=1, max_length=200)

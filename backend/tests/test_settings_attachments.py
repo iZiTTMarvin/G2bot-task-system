@@ -37,11 +37,26 @@ def test_settings_default_and_update(client):
 
     r = client.get("/api/v1/settings")
     assert r.json() == {
+        "api_format": "openai",
         "base_url": "http://127.0.0.1:9000/v1",
         "generation_model": "gen-m",
         "review_model": "rev-m",
         "api_key_set": True,
     }
+
+
+def test_anthropic_settings_and_legacy_update(client):
+    payload = {'base_url': 'https://model.local/v1/messages', 'generation_model': 'claude-test',
+               'api_format': 'anthropic', 'api_key': 'test'}
+    result = client.put('/api/v1/settings', json=payload)
+    assert result.status_code == 200
+    assert result.json()['api_format'] == 'anthropic'
+    result = client.put('/api/v1/settings', json={
+        'base_url': 'https://model.local/v1', 'generation_model': 'new-model',
+    })
+    assert result.json()['api_format'] == 'anthropic'
+    assert result.json()['api_key_set']
+    assert client.put('/api/v1/settings', json={**payload, 'api_format': 'invalid'}).status_code == 422
 
 
 def test_settings_uses_generation_model_for_review_by_default(client):

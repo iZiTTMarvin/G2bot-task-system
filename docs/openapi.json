@@ -2278,6 +2278,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "api_format": {
+            "type": "string",
+            "enum": ["openai", "anthropic"]
+          },
           "base_url": {
             "type": "string"
           },
@@ -2292,6 +2296,7 @@
           }
         },
         "required": [
+          "api_format",
           "base_url",
           "generation_model",
           "review_model",
@@ -2302,6 +2307,11 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "api_format": {
+            "type": "string",
+            "enum": ["openai", "anthropic"],
+            "description": "省略保留当前格式，旧配置默认 openai"
+          },
           "base_url": {
             "type": "string",
             "format": "uri",
@@ -2327,8 +2337,7 @@
         },
         "required": [
           "base_url",
-          "generation_model",
-          "review_model"
+          "generation_model"
         ]
       },
       "AttachmentSummary": {
@@ -3546,6 +3555,7 @@
       "SettingsExample": {
         "summary": "配置读取，不包含密钥",
         "value": {
+          "api_format": "openai",
           "base_url": "https://api.example.com/v1",
           "generation_model": "configured-generation-model",
           "review_model": "configured-review-model",

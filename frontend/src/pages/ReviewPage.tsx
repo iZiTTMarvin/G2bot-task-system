@@ -1,4 +1,4 @@
-import { Alert, Button, Input, Pagination, Select, Table, Tag, message } from 'antd';
+import { Alert, Button, Input, Pagination, Select, Table, message } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ApiClient } from '../api/client';
 import { newIdempotencyKey } from '../api/client';
@@ -6,6 +6,7 @@ import type { ApiError } from '../api/errors';
 import type { Batch, TaskPage, TaskStatus, TaskSummary } from '../api/types';
 import { STATUS_LABEL, STATUS_ORDER } from '../api/types';
 import TaskDrawer from '../components/TaskDrawer';
+import TaskStatusTag from '../components/TaskStatusTag';
 
 interface Props {
   api: ApiClient;
@@ -104,7 +105,7 @@ export default function ReviewPage({ api }: Props) {
       title: '状态',
       dataIndex: 'status',
       width: 120,
-      render: (value: TaskStatus) => <Tag>{STATUS_LABEL[value]}</Tag>,
+      render: (value: TaskStatus) => <TaskStatusTag status={value} />,
     },
     {
       key: 'action',

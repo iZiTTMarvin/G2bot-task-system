@@ -46,6 +46,58 @@ def _good_tasks(count: int, mode: str = "long") -> list[dict]:
 
 # ---------- 生成作业 ----------
 
+
+def test_connection_failure_can_retry_same_batch(client, monkeypatch):
+    _install(monkeypatch, ScriptedClient(gen_error=ModelCallError('MODEL_REQUEST_FAILED', '连接失败')))
+    batch = make_batch(client)
+    first = generate(client, batch['id'])
+    assert first['status'] == 'failed'
+    assert client.get(f"/api/v1/batches/{batch['id']}").json()['can_generate']
+    _install(monkeypatch, ScriptedClient())
+    second = generate(client, batch['id'], key='retry-new-attempt')
+    assert second['id'] != first['id'] and second['status'] == 'succeeded'
+    assert client.get('/api/v1/tasks').json()['total'] == 3
+
+
+def test_reviewer_optimizes_rule_failure_and_preserves_versions(client, monkeypatch):
+    original = _good_tasks(1)[0]
+    import copy
+    broken = copy.deepcopy(original)
+    broken['steps'][0] += '，检查物料'
+    class Optimizer(ScriptedClient):
+        def review_task(self, *, content, **kw):
+            assert content == broken
+            assert '检查' in kw['reference_text']
+            return {'verdict': 'pass', 'issues': [], 'summary': '已拆分动作并移除心智步骤',
+                    'optimized_task': original}
+    _install(monkeypatch, Optimizer(gen_payload=[broken]))
+    batch = make_batch(client, count=1)
+    assert generate(client, batch['id'])['status'] == 'succeeded'
+    task = client.get('/api/v1/tasks').json()['items'][0]
+    detail = client.get(f"/api/v1/tasks/{task['id']}").json()
+    assert task['status'] == 'human_pending'
+    assert detail['current_version']['content'] == original
+    assert detail['current_version']['author_type'] == 'ai_revision'
+    assert detail['ai_review_matches_current_version']
+    versions = client.get(f"/api/v1/tasks/{task['id']}/versions").json()['items']
+    assert len(versions) == 2 and versions[1]['content'] == broken
+
+
+def test_reviewer_cannot_pass_invalid_optimization(client, monkeypatch):
+    broken = _good_tasks(1)[0]
+    broken['steps'][0] += '，检查物料'
+    class InvalidOptimizer(ScriptedClient):
+        def review_task(self, **kw):
+            return {'verdict': 'pass', 'issues': [], 'summary': '通过', 'optimized_task': broken}
+    _install(monkeypatch, InvalidOptimizer())
+    batch = make_batch(client, count=1)
+    generate(client, batch['id'])
+    task = client.get('/api/v1/tasks').json()['items'][0]
+    detail = client.get(f"/api/v1/tasks/{task['id']}").json()
+    assert task['status'] == 'ai_rejected'
+    assert detail['latest_review']['verdict'] == 'needs_changes'
+    assert detail['latest_review']['issues']
+
 def test_generate_wrong_count_fails_without_partial(client, monkeypatch):
     _install(monkeypatch, ScriptedClient(gen_payload=_good_tasks(2)))
     batch = make_batch(client, count=3)

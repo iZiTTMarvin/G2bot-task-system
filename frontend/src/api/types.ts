@@ -215,6 +215,7 @@ export interface Run {
 }
 
 export interface Settings {
+  api_format: 'openai' | 'anthropic';
   base_url: string;
   generation_model: string;
   review_model: string;
@@ -250,7 +251,7 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
   pending_review: '待 AI 审核',
   ai_reviewing: 'AI 审核中',
   human_pending: '待人工审核',
-  ai_rejected: 'AI 退回',
+  ai_rejected: '需人工处理',
   review_failed: '审核失败',
   approved: '已通过',
   rejected: '人工驳回',

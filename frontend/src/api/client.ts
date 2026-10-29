@@ -13,6 +13,7 @@ export interface ApiClient {
   getHealth(): Promise<{ status: string; database: string; contract_version: string }>;
   getSettings(): Promise<import('./types').Settings>;
   updateSettings(payload: {
+    api_format?: 'openai' | 'anthropic';
     base_url: string;
     generation_model: string;
     review_model?: string;

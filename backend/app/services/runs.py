@@ -93,9 +93,10 @@ def _config_snapshot() -> dict[str, Any]:
     cfg = settings_service.raw_config()
     return {
         "base_url": cfg["base_url"],
+        "api_format": cfg["api_format"],
         "generation_model": cfg["generation_model"],
         "review_model": cfg["review_model"],
-        "agent_backend": "demo_fake" if CONFIG.demo_fake_model else "openai_http",
+        "agent_backend": "demo_fake" if CONFIG.demo_fake_model else f"{cfg['api_format']}_http",
     }
 
 
@@ -293,20 +294,39 @@ def _review_flow(run_id: str, task_id: str, *, reference_text: str) -> int:
     ).fetchone()
     batch = conn.execute("SELECT * FROM batches WHERE id=?", (task["batch_id"],)).fetchone()
     report = json.loads(version["validation_json"])
-    if report["status"] != "passed":
-        # 规则闸阻断：ai_rejected，不创建假 Review
-        _set_task_status(task_id, "ai_rejected")
-        _bump_progress(run_id)
-        return 0
-
     _set_task_status(task_id, "ai_reviewing", bump_revision=False)
     client = get_client()
     try:
         result = client.review_task(
             content=json.loads(version["content_json"]),
             task_mode=batch["task_mode"],
-            reference_text=reference_text,
+            reference_text=reference_text + "\n\n用户目标：" + batch["goal"]
+            + "\n\n规则校验结果（请修复可解决的问题）：\n"
+            + json.dumps(report["issues"], ensure_ascii=False),
         )
+        optimized = result.get("optimized_task")
+        if optimized is not None:
+            try:
+                optimized = tasks_service.normalize_content(optimized)
+            except ApiError as exc:
+                raise ModelCallError("MODEL_PROTOCOL_ERROR", exc.message) from exc
+            if optimized != json.loads(version["content_json"]):
+                with db.tx() as c:
+                    fresh = c.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+                    version = tasks_service.insert_version(
+                        c, task_row=fresh, content=optimized, author_type="ai_revision",
+                        change_note="AI 审核员优化：" + result["summary"], run_id=run_id,
+                        snapshot_id=batch["rule_snapshot_id"], task_mode=batch["task_mode"],
+                    )
+                report = json.loads(version["validation_json"])
+        # 优化后仍执行原有规则门禁，防止模型把未解决的问题标为通过。
+        if report["status"] != "passed":
+            result["verdict"] = "needs_changes"
+            result["issues"] = result["issues"] + [
+                {**issue, "quote": "", "suggestion": "请按规则修改后重新审核"}
+                for issue in report["issues"] if issue["severity"] == "error"
+            ]
+            result["summary"] = "优化后仍有规则问题，需要人工处理"
     except ModelCallError as exc:
         info = _error_info(exc.code, exc.message, exc.details, ref=run_id)
         _set_task_status(task_id, "review_failed", last_error=info)
@@ -355,13 +375,6 @@ def _review_flow(run_id: str, task_id: str, *, reference_text: str) -> int:
             "UPDATE runs SET progress_completed=progress_completed+1 WHERE id=?", (run_id,)
         )
     return 0
-
-
-def _bump_progress(run_id: str) -> None:
-    with db.tx() as conn:
-        conn.execute(
-            "UPDATE runs SET progress_completed=progress_completed+1 WHERE id=?", (run_id,)
-        )
 
 
 def _release_tasks(task_ids: list[str]) -> None:

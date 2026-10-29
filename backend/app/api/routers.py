@@ -47,7 +47,7 @@ def get_settings() -> dict:
 def update_settings(payload: SettingsUpdate) -> dict:
     if settings_service.has_active_run():
         raise run_busy()
-    return settings_service.update_settings(payload.model_dump())
+    return settings_service.update_settings(payload.model_dump(exclude_unset=True))
 
 
 @router.post("/attachments", status_code=201, tags=["attachments"])

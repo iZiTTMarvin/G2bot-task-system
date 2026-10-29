@@ -1,4 +1,4 @@
-"""OpenAI 兼容 HTTP 模型客户端（chat/completions）。
+"""OpenAI / Anthropic 兼容 HTTP 模型客户端。
 
 错误分类（契约）：MODEL_TIMEOUT / MODEL_AUTH_ERROR / MODEL_RATE_LIMIT /
 MODEL_PROTOCOL_ERROR / MODEL_REQUEST_FAILED。不把认证头或服务商原始响应放进 details。
@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+from urllib.parse import urlsplit
 from typing import Any
 
 import httpx
@@ -65,14 +66,24 @@ def _extract_json(text: str) -> Any:
 class OpenAIModelClient:
     def __init__(self) -> None:
         cfg = settings_service.raw_config()
+        self.api_format: str = cfg["api_format"]
         self.base_url: str = cfg["base_url"].rstrip("/")
         self.api_key: str = cfg["api_key"]
         self.generation_model: str = cfg["generation_model"]
         self.review_model: str = cfg["review_model"]
 
     def _chat(self, *, model: str, system: str, user: str) -> str:
-        url = f"{self.base_url}/chat/completions"
-        payload = {
+        anthropic = self.api_format == "anthropic"
+        suffix = "/messages" if anthropic else "/chat/completions"
+        base = self.base_url.rstrip("/")
+        if base.endswith(suffix):
+            url = base
+        else:
+            # 无路径的服务根地址使用 /v1；代理前缀与自定义版本路径原样保留。
+            url = base + ("/v1" if not urlsplit(base).path else "") + suffix
+        headers = ({"x-api-key": self.api_key, "anthropic-version": "2023-06-01"}
+                   if anthropic else {"Authorization": f"Bearer {self.api_key}"})
+        payload: dict[str, Any] = {
             "model": model,
             "messages": [
                 {"role": "system", "content": system},
@@ -80,11 +91,15 @@ class OpenAIModelClient:
             ],
             "temperature": 0.3,
         }
+        if anthropic:
+            payload["system"] = system
+            payload["messages"] = [{"role": "user", "content": user}]
+            payload["max_tokens"] = 16384
         try:
             with httpx.Client(timeout=TIMEOUT_SECONDS) as client:
                 resp = client.post(
                     url,
-                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    headers=headers,
                     json=payload,
                 )
         except httpx.TimeoutException as exc:
@@ -105,12 +120,15 @@ class OpenAIModelClient:
             )
         try:
             data = resp.json()
-            content = data["choices"][0]["message"]["content"]
+            if anthropic:
+                content = "".join(block["text"] for block in data["content"] if block["type"] == "text")
+            else:
+                content = data["choices"][0]["message"]["content"]
             if not isinstance(content, str) or not content.strip():
                 raise KeyError("content")
         except (ValueError, KeyError, IndexError, TypeError) as exc:
             raise ModelCallError(
-                "MODEL_PROTOCOL_ERROR", "模型响应缺少 choices[0].message.content"
+                "MODEL_PROTOCOL_ERROR", "模型响应缺少有效文本内容"
             ) from exc
         return content
 
@@ -193,7 +211,15 @@ class OpenAIModelClient:
             model=self.review_model, system=reviewer_prompt(task_mode, lo, hi), user=user
         )
         data = _extract_json(text)
-        return self._coerce_review(data, step_limit=len(content.get("steps", [])))
+        optimized = None
+        if isinstance(data, dict) and data.get("optimized_task") is not None:
+            optimized = self._coerce_task(data["optimized_task"])
+        result = self._coerce_review(
+            data, step_limit=len((optimized or content).get("steps", []))
+        )
+        if optimized is not None:
+            result["optimized_task"] = optimized
+        return result
 
     # ---- 结构收敛 ----
 
@@ -253,6 +279,8 @@ class OpenAIModelClient:
             raise ModelCallError("MODEL_PROTOCOL_ERROR", "needs_changes 必须至少包含一个问题")
         if verdict == "pass" and any(i["severity"] == "error" for i in issues):
             raise ModelCallError("MODEL_PROTOCOL_ERROR", "pass 结论包含 error 级问题")
+        if verdict == "needs_changes" and all(i["severity"] == "warning" for i in issues):
+            verdict = "pass"
         return {
             "verdict": verdict,
             "issues": issues,

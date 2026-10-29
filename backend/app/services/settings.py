@@ -10,6 +10,7 @@ from ..config import CONFIG
 from ..errors import ApiError, validation_error
 
 DEFAULTS: dict[str, Any] = {
+    "api_format": "openai",
     "base_url": "https://api.openai.com/v1",
     "generation_model": "",
     "review_model": "",
@@ -29,6 +30,7 @@ def _load() -> dict[str, Any]:
 def get_settings() -> dict[str, Any]:
     s = _load()
     return {
+        "api_format": s["api_format"],
         "base_url": s["base_url"],
         "generation_model": s["generation_model"],
         "review_model": s["review_model"],
@@ -63,6 +65,10 @@ def update_settings(payload: dict[str, Any]) -> dict[str, Any]:
             raise validation_error("api_key 不允许为空字符串；省略表示保留原密钥", ["api_key"])
 
     s = _load()
+    api_format = payload.get("api_format", s["api_format"])
+    if api_format not in ("openai", "anthropic"):
+        raise validation_error("api_format 必须为 openai 或 anthropic", ["api_format"])
+    s["api_format"] = api_format
     s["base_url"] = payload["base_url"].strip()
     s["generation_model"] = payload["generation_model"].strip()
     review_model = payload.get("review_model")

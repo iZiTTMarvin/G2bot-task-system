@@ -7,7 +7,6 @@ import {
   Progress,
   Select,
   Spin,
-  Tag,
   Upload,
   message,
 } from 'antd';
@@ -16,8 +15,8 @@ import type { ApiClient } from '../api/client';
 import { newIdempotencyKey } from '../api/client';
 import type { ApiError } from '../api/errors';
 import type { AttachmentSummary, Batch, Run, TaskSummary } from '../api/types';
-import { STATUS_LABEL } from '../api/types';
 import TaskDrawer from '../components/TaskDrawer';
+import TaskStatusTag from '../components/TaskStatusTag';
 
 interface Props {
   api: ApiClient;
@@ -27,7 +26,7 @@ const STAGE_LABEL: Record<Run['stage'], string> = {
   queued: '等待生成',
   generating: 'AI 正在命名并生成任务',
   validating: '正在校验任务',
-  reviewing: 'AI 正在审核任务',
+  reviewing: 'AI 审核员正在审查与优化任务',
   done: '生成完成',
 };
 
@@ -100,9 +99,13 @@ export default function GeneratePage({ api }: Props) {
   useEffect(() => {
     if (!selectedBatchId) return;
     let cancelled = false;
-    api.listTasks({ batch_id: selectedBatchId, page_size: 100 })
-      .then((result) => {
-        if (!cancelled) setTasks([...result.items].sort((a, b) => a.seq - b.seq));
+    Promise.all([
+      api.listTasks({ batch_id: selectedBatchId, page_size: 100 }),
+      api.getBatch(selectedBatchId).then(async (batch) => batch.latest_run_id ? api.getRun(batch.latest_run_id) : null),
+    ]).then(([result, run]) => {
+        if (cancelled) return;
+        setTasks([...result.items].sort((a, b) => a.seq - b.seq));
+        setActiveRun((current) => current?.status === 'queued' || current?.status === 'running' ? current : run);
       })
       .catch((cause) => {
         if (!cancelled) setError((cause as ApiError).message);
@@ -114,9 +117,9 @@ export default function GeneratePage({ api }: Props) {
 
   const refreshRunResults = useCallback(
     async (batchId: string) => {
-      await Promise.all([loadBatches(), loadTasks(batchId)]);
+      await Promise.all([loadBatches(), ...(batchId === selectedBatchId ? [loadTasks(batchId)] : [])]);
     },
-    [loadBatches, loadTasks]
+    [loadBatches, loadTasks, selectedBatchId]
   );
 
   useEffect(() => {
@@ -159,9 +162,14 @@ export default function GeneratePage({ api }: Props) {
   };
 
   const startBatch = async (batchId: string) => {
-    const run = await api.generateBatch(batchId, newIdempotencyKey());
-    setActiveRun(run);
-    setError(null);
+    setGenerating(true);
+    try {
+      const run = await api.generateBatch(batchId, newIdempotencyKey());
+      setActiveRun(run);
+      setError(null);
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const generate = async () => {
@@ -289,6 +297,11 @@ export default function GeneratePage({ api }: Props) {
           </div>
           {runActive && <Progress percent={progress} showInfo={false} />}
           {activeRun.error && <Alert type="error" showIcon message={activeRun.error.message} />}
+          {!runActive && activeRun.status !== 'succeeded' && (
+            <div className="task-goal">{tasks.length === 0
+              ? '要求与附件已保留。检查 API 设置后可在当前任务集重新生成。'
+              : '已生成的任务已保留。打开失败任务，点击「重新审核」即可继续。'}</div>
+          )}
         </section>
       )}
 
@@ -303,7 +316,10 @@ export default function GeneratePage({ api }: Props) {
                   type="button"
                   key={batch.id}
                   className={`collection-item${batch.id === selectedBatchId ? ' is-active' : ''}`}
-                  onClick={() => setSelectedBatchId(batch.id)}
+                  onClick={() => {
+                    if (batch.id !== selectedBatchId) setTasks([]);
+                    setSelectedBatchId(batch.id);
+                  }}
                 >
                   <span className="collection-name">{batch.name ?? '未命名任务集'}</span>
                   <span className="collection-meta">
@@ -323,8 +339,8 @@ export default function GeneratePage({ api }: Props) {
               {selectedBatch && <div className="task-goal">{selectedBatch.goal}</div>}
             </div>
             {selectedBatch?.can_generate && !runActive && (
-              <Button onClick={() => startBatch(selectedBatch.id).catch((cause) => setError((cause as ApiError).message))}>
-                生成
+              <Button loading={generating} onClick={() => startBatch(selectedBatch.id).catch((cause) => setError((cause as ApiError).message))}>
+                {selectedBatch.latest_run_id ? '重新生成' : '生成'}
               </Button>
             )}
           </div>
@@ -339,7 +355,7 @@ export default function GeneratePage({ api }: Props) {
                 <span className="task-index">{String(task.seq).padStart(2, '0')}</span>
                 <span className="task-name">{task.name}</span>
                 <span className="task-steps">{task.step_count} 步</span>
-                <Tag>{STATUS_LABEL[task.status]}</Tag>
+                <TaskStatusTag status={task.status} />
               </button>
             ))}
             {tasks.length === 0 && !runActive && (

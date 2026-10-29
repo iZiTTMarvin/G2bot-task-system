@@ -15,7 +15,8 @@ import type { ApiClient } from '../api/client';
 import { newIdempotencyKey } from '../api/client';
 import type { ApiError } from '../api/errors';
 import type { Material, TaskContent, TaskDetail } from '../api/types';
-import { STATUS_LABEL } from '../api/types';
+import AIReviewPanel from './AIReviewPanel';
+import TaskStatusTag from './TaskStatusTag';
 
 interface Props {
   api: ApiClient;
@@ -208,9 +209,9 @@ export default function TaskDrawer({ api, taskId, onClose, onUpdated }: Props) {
     <Drawer
       open={Boolean(taskId)}
       onClose={close}
-      width={720}
+      width="min(720px, 100vw)"
       title={content?.name ?? '任务'}
-      extra={detail && <Tag>{STATUS_LABEL[detail.summary.status]}</Tag>}
+      extra={detail && <TaskStatusTag status={detail.summary.status} />}
       footer={
         detail && (
           <div className="drawer-actions">
@@ -250,7 +251,7 @@ export default function TaskDrawer({ api, taskId, onClose, onUpdated }: Props) {
         {detail && content ? (
           <>
             {detail.last_error && <Alert type="error" showIcon message={detail.last_error.message} />}
-            {busy && <Alert type="info" showIcon message="AI 正在处理" />}
+            {!editing && <AIReviewPanel detail={detail} />}
             <section className="task-detail-section">
               <div className="task-detail-title">任务步骤 · {content.steps.length}</div>
               {editing
@@ -327,24 +328,6 @@ export default function TaskDrawer({ api, taskId, onClose, onUpdated }: Props) {
               </section>
             )}
 
-            {!editing && detail.latest_review && (
-              <section className="task-detail-section">
-                <div className="task-detail-title">AI 审核</div>
-                <Tag color={detail.latest_review.verdict === 'pass' ? 'green' : 'orange'}>
-                  {detail.latest_review.verdict === 'pass' ? '通过' : '需要修改'}
-                </Tag>
-                {!detail.ai_review_matches_current_version && <Tag>旧版本</Tag>}
-                {detail.latest_review.summary && <div className="review-summary">{detail.latest_review.summary}</div>}
-                {detail.latest_review.issues.map((issue, index) => (
-                  <Alert
-                    key={index}
-                    type={issue.severity === 'error' ? 'error' : 'warning'}
-                    message={`${issue.step_no ? `第 ${issue.step_no} 步 · ` : ''}${issue.message}`}
-                    description={issue.suggestion || undefined}
-                  />
-                ))}
-              </section>
-            )}
           </>
         ) : (
           !loading && <Empty description="任务不存在" />

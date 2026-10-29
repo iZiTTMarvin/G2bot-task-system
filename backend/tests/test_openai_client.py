@@ -1,6 +1,64 @@
 import json
+import httpx
+import pytest
 
 from app.agents.openai_client import OpenAIModelClient
+
+
+@pytest.mark.parametrize('protocol,base,endpoint', [
+    ('openai', 'https://model.local', 'https://model.local/v1/chat/completions'),
+    ('openai', 'https://model.local/v1/', 'https://model.local/v1/chat/completions'),
+    ('openai', 'https://model.local/proxy/v2', 'https://model.local/proxy/v2/chat/completions'),
+    ('openai', 'https://model.local/v1/chat/completions/', 'https://model.local/v1/chat/completions'),
+    ('anthropic', 'https://model.local', 'https://model.local/v1/messages'),
+    ('anthropic', 'https://model.local/anthropic/v1/', 'https://model.local/anthropic/v1/messages'),
+    ('anthropic', 'https://model.local/v1/messages', 'https://model.local/v1/messages'),
+])
+def test_http_protocol_and_endpoint(monkeypatch, protocol, base, endpoint):
+    from app.services import settings
+    monkeypatch.setattr(settings, 'raw_config', lambda: {
+        'api_format': protocol, 'base_url': base, 'api_key': 'test',
+        'generation_model': 'gen', 'review_model': 'review',
+    })
+    def respond(request):
+        assert str(request.url) == endpoint
+        body = json.loads(request.content)
+        assert body['model'] == 'gen'
+        if protocol == 'anthropic':
+            assert request.headers['x-api-key'] == 'test'
+            assert request.headers['anthropic-version'] == '2023-06-01'
+            assert body['system'] == 'system'
+            assert body['max_tokens'] > 0
+            assert body['messages'] == [{'role': 'user', 'content': 'user'}]
+            return httpx.Response(200, json={'content': [
+                {'type': 'thinking', 'thinking': 'private'},
+                {'type': 'text', 'text': 'hello'}, {'type': 'text', 'text': ' world'},
+            ]})
+        assert request.headers['authorization'] == 'Bearer test'
+        assert body['messages'][0] == {'role': 'system', 'content': 'system'}
+        return httpx.Response(200, json={'choices': [{'message': {'content': 'hello world'}}]})
+    real_client = httpx.Client
+    monkeypatch.setattr(httpx, 'Client', lambda **kw: real_client(
+        transport=httpx.MockTransport(respond), **kw))
+    assert OpenAIModelClient()._chat(model='gen', system='system', user='user') == 'hello world'
+
+
+def test_review_accepts_optimized_task(monkeypatch):
+    updated = _task()
+    updated['steps'] *= 2
+    client = _client(monkeypatch, {
+        'verdict': 'pass', 'issues': [], 'summary': '已优化', 'optimized_task': updated,
+    })
+    result = client.review_task(content=_task(), task_mode='standard', reference_text='')
+    assert result['optimized_task'] == updated
+
+
+def test_review_warning_does_not_reject(monkeypatch):
+    client = _client(monkeypatch, {'verdict': 'needs_changes', 'summary': '建议精简表述',
+        'issues': [{'severity': 'warning', 'step_no': 1, 'message': '步骤偏长'}]})
+    result = client.review_task(content=_task(), task_mode='standard', reference_text='')
+    assert result['verdict'] == 'pass'
+    assert len(result['issues']) == 1
 
 
 def _client(monkeypatch, payload):
