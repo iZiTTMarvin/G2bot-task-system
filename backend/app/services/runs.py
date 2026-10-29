@@ -36,6 +36,7 @@ FinishFn = Callable[[sqlite3.Connection, int, Any], None]
 
 _worker: threading.Thread | None = None
 _wake = threading.Event()
+_worker_stop = threading.Event()
 
 
 def _error_info(code: str, message: str, details: dict | None = None, ref: str = "") -> dict:
@@ -311,14 +312,27 @@ def _review_flow(run_id: str, task_id: str, *, reference_text: str) -> int:
             except ApiError as exc:
                 raise ModelCallError("MODEL_PROTOCOL_ERROR", exc.message) from exc
             if optimized != json.loads(version["content_json"]):
-                with db.tx() as c:
-                    fresh = c.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
-                    version = tasks_service.insert_version(
-                        c, task_row=fresh, content=optimized, author_type="ai_revision",
-                        change_note="AI 审核员优化：" + result["summary"], run_id=run_id,
-                        snapshot_id=batch["rule_snapshot_id"], task_mode=batch["task_mode"],
-                    )
-                report = json.loads(version["validation_json"])
+                candidate = rule_tools.validate_content(
+                    optimized, batch["task_mode"], batch["rule_snapshot_id"]
+                )
+                if report["status"] == "passed" and candidate["status"] != "passed":
+                    reason = next(i["message"] for i in candidate["issues"] if i["severity"] == "error")
+                    result["verdict"] = "needs_changes"
+                    result["summary"] = "AI 优化版本未通过规则校验，已保留原正文"
+                    result["issues"] = [{
+                        "severity": "error", "step_no": None, "rule_id": None, "quote": "",
+                        "message": f"优化版本存在规则问题：{reason}；已保留原正文。",
+                        "suggestion": "请检查原正文并重新审核。",
+                    }]
+                else:
+                    with db.tx() as c:
+                        fresh = c.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+                        version = tasks_service.insert_version(
+                            c, task_row=fresh, content=optimized, author_type="ai_revision",
+                            change_note="AI 审核员优化：" + result["summary"], run_id=run_id,
+                            snapshot_id=batch["rule_snapshot_id"], task_mode=batch["task_mode"],
+                        )
+                    report = json.loads(version["validation_json"])
         # 优化后仍执行原有规则门禁，防止模型把未解决的问题标为通过。
         if report["status"] != "passed":
             result["verdict"] = "needs_changes"
@@ -612,12 +626,13 @@ def start_worker(app: Any) -> None:
     global _worker
     if _worker is not None and _worker.is_alive():
         return
+    _worker_stop.clear()
 
     def loop() -> None:
         import time
         import traceback
 
-        while True:
+        while not _worker_stop.is_set():
             run_id = None
             try:
                 with db.tx() as conn:
@@ -630,7 +645,8 @@ def start_worker(app: Any) -> None:
                     _wake.wait(0.3)
                     _wake.clear()
                     continue
-                execute_queued_run(run_id)
+                if not _worker_stop.is_set():
+                    execute_queued_run(run_id)
             except Exception:
                 traceback.print_exc()
                 if run_id is not None:
@@ -646,6 +662,16 @@ def start_worker(app: Any) -> None:
 
     _worker = threading.Thread(target=loop, name="g2-run-worker", daemon=True)
     _worker.start()
+
+
+def stop_worker() -> None:
+    global _worker
+    if _worker is None:
+        return
+    _worker_stop.set()
+    _wake.set()
+    _worker.join()
+    _worker = None
 
 
 def wake_worker() -> None:

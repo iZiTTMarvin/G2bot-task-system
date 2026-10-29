@@ -13,6 +13,7 @@ from . import db, ids
 from .api import routers
 from .config import CONFIG
 from .errors import ApiError
+from .instance_lock import lock_data_dir
 from .services import runs as runs_service
 
 logger = logging.getLogger("g2tasks")
@@ -40,12 +41,16 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        db.init_db()
-        recovered = runs_service.recover_interrupted()
-        if any(recovered.values()):
-            logger.info("startup recovery: %s", recovered)
-        runs_service.start_worker(_app)
-        yield
+        with lock_data_dir(CONFIG.data_dir):
+            db.init_db()
+            recovered = runs_service.recover_interrupted()
+            if any(recovered.values()):
+                logger.info("startup recovery: %s", recovered)
+            runs_service.start_worker(_app)
+            try:
+                yield
+            finally:
+                runs_service.stop_worker()
 
     app = FastAPI(
         title="G2 Task System Demo API",

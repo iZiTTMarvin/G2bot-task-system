@@ -10,7 +10,7 @@ import {
   Upload,
   message,
 } from 'antd';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ApiClient } from '../api/client';
 import { newIdempotencyKey } from '../api/client';
 import type { ApiError } from '../api/errors';
@@ -30,6 +30,17 @@ const STAGE_LABEL: Record<Run['stage'], string> = {
   done: '生成完成',
 };
 
+function runLabel(run: Run): string {
+  if (run.status !== 'queued' && run.status !== 'running') {
+    if (run.kind === 'review_task') return run.status === 'succeeded' ? '审核完成' : '审核失败';
+    if (run.kind === 'revise_task') return run.status === 'succeeded' ? '重写完成' : '重写失败';
+    return run.status === 'succeeded' ? '生成完成' : '生成失败';
+  }
+  if (run.stage === 'queued' && run.kind !== 'generate_batch') return '等待处理任务';
+  if (run.stage === 'generating' && run.kind === 'revise_task') return 'AI 正在按反馈重写任务';
+  return STAGE_LABEL[run.stage];
+}
+
 export default function GeneratePage({ api }: Props) {
   const [prompt, setPrompt] = useState('');
   const [taskCount, setTaskCount] = useState(3);
@@ -38,6 +49,7 @@ export default function GeneratePage({ api }: Props) {
   const [attachmentIds, setAttachmentIds] = useState<string[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+  const selectedBatchIdRef = useRef<string | null>(null);
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [activeRun, setActiveRun] = useState<Run | null>(null);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
@@ -45,13 +57,20 @@ export default function GeneratePage({ api }: Props) {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const selectBatch = useCallback((batchId: string) => {
+    selectedBatchIdRef.current = batchId;
+    setSelectedBatchId(batchId);
+  }, []);
+
   const loadTasks = useCallback(
     async (batchId: string) => {
       try {
         const result = await api.listTasks({ batch_id: batchId, page_size: 100 });
-        setTasks([...result.items].sort((a, b) => a.seq - b.seq));
+        if (selectedBatchIdRef.current === batchId) {
+          setTasks([...result.items].sort((a, b) => a.seq - b.seq));
+        }
       } catch (cause) {
-        setError((cause as ApiError).message);
+        if (selectedBatchIdRef.current === batchId) setError((cause as ApiError).message);
       }
     },
     [api]
@@ -74,13 +93,13 @@ export default function GeneratePage({ api }: Props) {
         if (cancelled) return;
         setAttachments(attachmentPage.items);
         const current = batchItems[0];
-        if (current) setSelectedBatchId(current.id);
+        if (current) selectBatch(current.id);
         for (const batch of batchItems) {
           if (!batch.latest_run_id) continue;
           const run = await api.getRun(batch.latest_run_id);
           if (run.status === 'queued' || run.status === 'running') {
             if (!cancelled) {
-              setSelectedBatchId(batch.id);
+              selectBatch(batch.id);
               setActiveRun(run);
             }
             break;
@@ -94,7 +113,7 @@ export default function GeneratePage({ api }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [api, loadBatches]);
+  }, [api, loadBatches, selectBatch]);
 
   useEffect(() => {
     if (!selectedBatchId) return;
@@ -130,10 +149,11 @@ export default function GeneratePage({ api }: Props) {
         const run = await api.getRun(activeRun.id);
         if (cancelled) return;
         setActiveRun(run);
-        if (run.status !== 'queued' && run.status !== 'running') {
+        const finished = run.status !== 'queued' && run.status !== 'running';
+        if (finished || run.stage !== activeRun.stage || run.progress.completed !== activeRun.progress.completed) {
           await refreshRunResults(activeRun.batch_id);
-          if (run.status === 'succeeded') message.success('任务集已生成');
         }
+        if (finished && run.status === 'succeeded') message.success(runLabel(run));
       } catch (cause) {
         if (!cancelled) {
           setError((cause as ApiError).message);
@@ -188,7 +208,7 @@ export default function GeneratePage({ api }: Props) {
         newIdempotencyKey()
       );
       setBatches((current) => [batch, ...current]);
-      setSelectedBatchId(batch.id);
+      selectBatch(batch.id);
       setTasks([]);
       await startBatch(batch.id);
       setPrompt('');
@@ -204,6 +224,13 @@ export default function GeneratePage({ api }: Props) {
   const progress = activeRun
     ? Math.round((activeRun.progress.completed / Math.max(activeRun.progress.total, 1)) * 100)
     : 0;
+
+  const refreshSelected = useCallback(() => {
+    if (selectedBatchId) {
+      void loadTasks(selectedBatchId);
+      void loadBatches();
+    }
+  }, [loadBatches, loadTasks, selectedBatchId]);
 
   return (
     <div className="generate-page">
@@ -287,20 +314,18 @@ export default function GeneratePage({ api }: Props) {
         <section className="run-panel">
           <div className="run-heading">
             <span>
-              {runActive
-                ? STAGE_LABEL[activeRun.stage]
-                : activeRun.status === 'succeeded'
-                  ? STAGE_LABEL.done
-                  : '生成失败'}
+              {runLabel(activeRun)}
             </span>
             {runActive && <Spin size="small" />}
           </div>
           {runActive && <Progress percent={progress} showInfo={false} />}
           {activeRun.error && <Alert type="error" showIcon message={activeRun.error.message} />}
           {!runActive && activeRun.status !== 'succeeded' && (
-            <div className="task-goal">{tasks.length === 0
-              ? '要求与附件已保留。检查 API 设置后可在当前任务集重新生成。'
-              : '已生成的任务已保留。打开失败任务，点击「重新审核」即可继续。'}</div>
+            <div className="task-goal">{activeRun.kind !== 'generate_batch'
+              ? '任务正文已保留。检查错误后可打开任务重试。'
+              : tasks.length === 0
+                ? '要求与附件已保留。检查 API 设置后可在当前任务集重新生成。'
+                : '已生成的任务已保留。打开失败任务，点击「重新审核」即可继续。'}</div>
           )}
         </section>
       )}
@@ -318,7 +343,7 @@ export default function GeneratePage({ api }: Props) {
                   className={`collection-item${batch.id === selectedBatchId ? ' is-active' : ''}`}
                   onClick={() => {
                     if (batch.id !== selectedBatchId) setTasks([]);
-                    setSelectedBatchId(batch.id);
+                    selectBatch(batch.id);
                   }}
                 >
                   <span className="collection-name">{batch.name ?? '未命名任务集'}</span>
@@ -370,12 +395,8 @@ export default function GeneratePage({ api }: Props) {
         api={api}
         taskId={openTaskId}
         onClose={() => setOpenTaskId(null)}
-        onUpdated={() => {
-          if (selectedBatchId) {
-            void loadTasks(selectedBatchId);
-            void loadBatches();
-          }
-        }}
+        onUpdated={refreshSelected}
+        onRunStarted={setActiveRun}
       />
     </div>
   );

@@ -12,6 +12,7 @@ cd /d "%~dp0"
 
 set MODE=%1
 if "%MODE%"=="" set MODE=run
+if not defined G2_PORT set G2_PORT=8000
 
 if not exist backend\.venv\Scripts\python.exe (
   echo [1/3] Creating Python venv and installing dependencies...
@@ -27,13 +28,6 @@ if not exist frontend\node_modules (
   cd ..
 )
 
-if not exist frontend\dist (
-  echo [3/3] Building frontend...
-  cd frontend
-  call npm run build || goto :error
-  cd ..
-)
-
 if "%MODE%"=="dev" (
   echo Dev mode: backend http://127.0.0.1:8000 , frontend http://127.0.0.1:5173
   start "G2-backend" cmd /c "cd /d %~dp0backend && .venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload"
@@ -43,16 +37,18 @@ if "%MODE%"=="dev" (
 )
 
 if "%MODE%"=="demo" (
-  echo Demo mode - FakeModel, no credentials: http://127.0.0.1:8000
+  echo Demo mode - FakeModel, no credentials: http://127.0.0.1:%G2_PORT%
   set G2_DEMO_FAKE_MODEL=1
   cd backend
-  .venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+  .venv\Scripts\python serve.py
+  if errorlevel 1 goto :error
   goto :end
 )
 
-echo Run mode - real model: http://127.0.0.1:8000  - configure model and API key on the Settings page first
+echo Run mode - real model: http://127.0.0.1:%G2_PORT%  - configure model and API key on the Settings page first
 cd backend
-.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+.venv\Scripts\python serve.py
+if errorlevel 1 goto :error
 goto :end
 
 :error

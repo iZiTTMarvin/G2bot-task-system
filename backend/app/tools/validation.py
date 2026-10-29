@@ -50,9 +50,15 @@ def steps_to_text(steps: list[str]) -> str:
 
 
 def materials_to_text(materials: list[dict[str, Any]]) -> str:
+    _import_snapshot()
     import materials as m
 
-    return m.format_materials([(item["name"], item["quantity"]) for item in materials])
+    # 步骤允许同类物品带编号，物料行按快照规则去掉编号并汇总数量。
+    grouped: dict[str, int] = {}
+    for item in materials:
+        name = m.SUFFIX_RE.sub("", item["name"].strip())
+        grouped[name] = grouped.get(name, 0) + item["quantity"]
+    return m.format_materials(list(grouped.items()))
 
 
 class RuleToolFailure(Exception):

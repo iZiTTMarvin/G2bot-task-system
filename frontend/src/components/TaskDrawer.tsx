@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ApiClient } from '../api/client';
 import { newIdempotencyKey } from '../api/client';
 import type { ApiError } from '../api/errors';
-import type { Material, TaskContent, TaskDetail } from '../api/types';
+import type { Material, Run, TaskContent, TaskDetail } from '../api/types';
 import AIReviewPanel from './AIReviewPanel';
 import TaskStatusTag from './TaskStatusTag';
 
@@ -23,9 +23,10 @@ interface Props {
   taskId: string | null;
   onClose: () => void;
   onUpdated: () => void;
+  onRunStarted?: (run: Run) => void;
 }
 
-export default function TaskDrawer({ api, taskId, onClose, onUpdated }: Props) {
+export default function TaskDrawer({ api, taskId, onClose, onUpdated, onRunStarted }: Props) {
   const [detail, setDetail] = useState<TaskDetail | null>(null);
   const [steps, setSteps] = useState<string[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -46,7 +47,8 @@ export default function TaskDrawer({ api, taskId, onClose, onUpdated }: Props) {
   const load = useCallback(async () => {
     if (!taskId) return;
     try {
-      applyDetail(await api.getTask(taskId));
+      const value = await api.getTask(taskId);
+      applyDetail(value);
     } catch (cause) {
       message.error((cause as ApiError).message);
     } finally {
@@ -74,10 +76,26 @@ export default function TaskDrawer({ api, taskId, onClose, onUpdated }: Props) {
 
   const busy = Boolean(detail?.summary.busy_run_id);
   useEffect(() => {
-    if (!busy) return;
-    const timer = setInterval(() => void load(), 1500);
-    return () => clearInterval(timer);
-  }, [busy, load]);
+    if (!busy || !taskId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const value = await api.getTask(taskId);
+        if (cancelled) return;
+        if (!value.summary.busy_run_id) onUpdated();
+        applyDetail(value);
+      } catch (cause) {
+        if (!cancelled) message.error((cause as ApiError).message);
+      }
+      if (!cancelled) timer = setTimeout(poll, 1500);
+    };
+    timer = setTimeout(poll, 1500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [api, applyDetail, busy, onUpdated, taskId]);
 
   const dirty = useMemo(() => {
     if (!detail) return false;
@@ -152,7 +170,7 @@ export default function TaskDrawer({ api, taskId, onClose, onUpdated }: Props) {
   const revise = async () => {
     if (!detail || !feedback.trim()) return;
     try {
-      await api.reviseTask(
+      const run = await api.reviseTask(
         detail.summary.id,
         {
           expected_revision: detail.summary.revision,
@@ -161,6 +179,7 @@ export default function TaskDrawer({ api, taskId, onClose, onUpdated }: Props) {
         },
         newIdempotencyKey()
       );
+      onRunStarted?.(run);
       setReviseOpen(false);
       setFeedback('');
       await load();
@@ -173,7 +192,7 @@ export default function TaskDrawer({ api, taskId, onClose, onUpdated }: Props) {
   const review = async () => {
     if (!detail) return;
     try {
-      await api.reviewTask(
+      const run = await api.reviewTask(
         detail.summary.id,
         {
           expected_revision: detail.summary.revision,
@@ -181,6 +200,7 @@ export default function TaskDrawer({ api, taskId, onClose, onUpdated }: Props) {
         },
         newIdempotencyKey()
       );
+      onRunStarted?.(run);
       await load();
       onUpdated();
     } catch (cause) {

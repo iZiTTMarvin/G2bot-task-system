@@ -13,6 +13,7 @@ from typing import Any, Callable
 from .. import db, ids
 from ..config import CONFIG
 from ..errors import ApiError, invalid_state, not_found
+from ..tools.validation import materials_to_text
 from . import render
 
 COLUMNS = ["任务名字", "任务步骤", "单套所需物料"]
@@ -23,19 +24,7 @@ def _steps_cell(steps: list[str]) -> str:
 
 
 def _materials_cell(materials: list[dict[str, Any]]) -> str:
-    import materials as snapshot_materials
-
-    return snapshot_materials.format_materials(
-        [(m["name"], m["quantity"]) for m in materials]
-    )
-
-
-def _ensure_snapshot_module() -> None:
-    import sys
-
-    scripts = str(CONFIG.skill_snapshot_dir / "scripts")
-    if scripts not in sys.path:
-        sys.path.insert(0, scripts)
+    return materials_to_text(materials)
 
 
 def create_export(
@@ -79,7 +68,6 @@ def create_export(
         ).fetchone()
         version_rows.append((task, v))
 
-    _ensure_snapshot_module()
     from openpyxl import Workbook
 
     wb = Workbook()
