@@ -6,11 +6,15 @@
 
 ## 快速开始（Windows，需已安装 Python 3.12+ 与 Node 20+）
 
-```bat
-start.bat demo    :: 演示模式：不需要模型凭据，用确定性 FakeModel 走通全流程
-start.bat         :: 正式模式：启动后在「设置」页填写 OpenAI 兼容地址/密钥/模型名
-start.bat dev     :: 开发模式：Vite 热重载(5173) + 后端(8000)
+在 PowerShell 中（注意必须带 `.\` 前缀，PowerShell 不从当前目录找命令）：
+
+```powershell
+.\start.bat demo    # 演示模式：不需要模型凭据，用确定性 FakeModel 走通全流程
+.\start.bat         # 正式模式：启动后在「设置」页填写 OpenAI 兼容地址/密钥/模型名
+.\start.bat dev     # 开发模式：Vite 热重载(5173) + 后端(8000)
 ```
+
+在传统 cmd 中直接 `start.bat demo` 即可。
 
 演示/正式模式都访问 <http://127.0.0.1:8000>（FastAPI 托管前端构建产物）。首次启动会自动创建虚拟环境、安装依赖并构建前端。
 
