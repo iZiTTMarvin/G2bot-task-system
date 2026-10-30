@@ -15,6 +15,7 @@ from typing import Any, Callable
 
 from .. import db, ids
 from ..agents import get_client
+from ..agents.trace import trace_run
 from ..errors import (
     ApiError,
     ModelCallError,
@@ -97,7 +98,7 @@ def _config_snapshot() -> dict[str, Any]:
         "api_format": cfg["api_format"],
         "generation_model": cfg["generation_model"],
         "review_model": cfg["review_model"],
-        "agent_backend": "demo_fake" if CONFIG.demo_fake_model else f"{cfg['api_format']}_http",
+        "agent_backend": "demo_fake" if CONFIG.demo_fake_model else "deepagents",
     }
 
 
@@ -341,7 +342,7 @@ def _review_flow(run_id: str, task_id: str, *, reference_text: str) -> int:
                 for issue in report["issues"] if issue["severity"] == "error"
             ]
             result["summary"] = "优化后仍有规则问题，需要人工处理"
-    except ModelCallError as exc:
+    except (ModelCallError, ApiError) as exc:
         info = _error_info(exc.code, exc.message, exc.details, ref=run_id)
         _set_task_status(task_id, "review_failed", last_error=info)
         with db.tx() as c:
@@ -433,7 +434,8 @@ def _execute_generate_batch(run_id: str) -> None:
         _fail_run(run_id, exc)
         return
     except ApiError as exc:  # 结构不合法 → 协议级失败，不保存部分草稿
-        _fail_run(run_id, ModelCallError("MODEL_PROTOCOL_ERROR", exc.message))
+        _fail_run(run_id, exc if exc.code == "RULE_TOOL_FAILED" else
+                  ModelCallError("MODEL_PROTOCOL_ERROR", exc.message))
         return
 
     # 整体结构校验通过 → 事务保存全部草稿（含规则报告），整批占用
@@ -524,12 +526,13 @@ def _execute_task_run(run_id: str) -> None:
             )
         except ModelCallError as exc:
             # 不新增版本；原正文和状态保留，错误记录在 Run
-            _fail_run(run_id, exc)
             _release_tasks([task_id])
+            _fail_run(run_id, exc)
             return
         except ApiError as exc:
-            _fail_run(run_id, ModelCallError("MODEL_PROTOCOL_ERROR", exc.message))
             _release_tasks([task_id])
+            _fail_run(run_id, exc if exc.code == "RULE_TOOL_FAILED" else
+                      ModelCallError("MODEL_PROTOCOL_ERROR", exc.message))
             return
         with db.tx() as c:
             fresh = c.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
@@ -573,23 +576,27 @@ def _execute_task_run(run_id: str) -> None:
 
 
 def execute_queued_run(run_id: str) -> None:
-    row = db.get_conn().execute("SELECT kind FROM runs WHERE id=?", (run_id,)).fetchone()
+    row = db.get_conn().execute(
+        "SELECT r.kind, b.rule_snapshot_id FROM runs r JOIN batches b ON b.id=r.batch_id WHERE r.id=?",
+        (run_id,),
+    ).fetchone()
     if row is None:
         return
     try:
-        if row["kind"] == "generate_batch":
-            _execute_generate_batch(run_id)
-        else:
-            _execute_task_run(run_id)
+        with trace_run(run_id, row["rule_snapshot_id"]):
+            if row["kind"] == "generate_batch":
+                _execute_generate_batch(run_id)
+            else:
+                _execute_task_run(run_id)
     except ApiError as exc:
-        _fail_run(run_id, exc)
         _release_run_tasks(run_id)
+        _fail_run(run_id, exc)
     except Exception as exc:  # 兜底：作业线程不允许吞掉异常后假装运行中
+        _release_run_tasks(run_id)
         _fail_run(
             run_id,
             ApiError(500, "INTERNAL_ERROR", f"作业执行异常：{type(exc).__name__}"),
         )
-        _release_run_tasks(run_id)
 
 
 def _release_run_tasks(run_id: str) -> None:

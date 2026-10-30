@@ -5,5 +5,12 @@ openpyxl==3.1.5
 pydantic==2.14.1
 pytest==9.2.0
 python-multipart==0.0.20
-# 可选：Deep Agents SDK（真实模型接入验证时启用；当前默认通路为 OpenAI 兼容 HTTP）
-# deepagents==0.7.32
+deepagents==0.7.32
+langchain==1.4.7
+langchain-core==1.7.0
+langgraph==1.2.18
+langgraph-checkpoint==4.3.1
+langchain-openai==1.7.3
+langchain-anthropic==1.7.7
+openai==3.41.0
+anthropic==2.3.0

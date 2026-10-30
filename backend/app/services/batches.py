@@ -6,7 +6,7 @@ from typing import Any
 
 from .. import db, ids
 from ..errors import ApiError, not_found, validation_error
-from ..tools import validation as rule_tools
+from ..tools.skill_bundle import freeze_bundle
 from . import attachments as attachments_service
 from . import render
 
@@ -14,13 +14,13 @@ MAX_BATCH_CONTEXT = 80_000
 
 
 def _ensure_rule_snapshot(conn: Any) -> str:
-    snapshot_id = rule_tools.rule_snapshot_id()
+    bundle = freeze_bundle()
+    snapshot_id = bundle.id
     exists = conn.execute(
         "SELECT 1 FROM rule_snapshots WHERE id=?", (snapshot_id,)
     ).fetchone()
     if not exists:
-        manifest_path = rule_tools.CONFIG.skill_snapshot_dir / "MANIFEST.json"
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = bundle.manifest
         conn.execute(
             "INSERT INTO rule_snapshots (id, created_at, manifest_json) VALUES (?,?,?)",
             (snapshot_id, db.utcnow(), json.dumps(manifest, ensure_ascii=False)),

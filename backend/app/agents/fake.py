@@ -9,19 +9,15 @@
 """
 from __future__ import annotations
 
-import sys
 from typing import Any
 
-from ..config import CONFIG
+from ..tools.skill_bundle import load_bundle
 from ..errors import ModelCallError
 from ..prompts_spec import STEP_RANGES
 
 
 def _snapshot_materials():
-    sys.path.insert(0, str(CONFIG.skill_snapshot_dir / "scripts"))
-    import materials as snapshot_materials  # type: ignore
-
-    return snapshot_materials
+    return load_bundle().module("materials")
 
 
 def _steps(index: int, mode: str, marker: str = "") -> list[str]:

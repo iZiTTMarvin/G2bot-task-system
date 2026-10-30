@@ -18,8 +18,10 @@ if not exist backend\.venv\Scripts\python.exe (
   echo [1/3] Creating Python venv and installing dependencies...
   python -m venv backend\.venv || goto :error
   backend\.venv\Scripts\python -m pip install --upgrade pip -q || goto :error
-  backend\.venv\Scripts\pip install -r backend\requirements.txt -q || goto :error
 )
+
+echo [1/3] Checking backend dependencies...
+backend\.venv\Scripts\python -m pip install --disable-pip-version-check -r backend\requirements.txt -q || goto :error
 
 if not exist frontend\node_modules (
   echo [2/3] Installing frontend dependencies...

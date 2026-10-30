@@ -1,6 +1,6 @@
 """Agent 入口：生成 Agent 与审核 Agent 的公共抽象。
 
-- get_client() 是唯一工厂：正式通路用 OpenAI / Anthropic 兼容 HTTP；测试替换此函数。
+- get_client() 是唯一工厂：正式通路用 Deep Agents；测试替换此函数。
 """
 from __future__ import annotations
 
@@ -39,9 +39,9 @@ def get_client() -> ModelClient:
         from .fake import FakeModelClient
 
         return FakeModelClient()
-    from .openai_client import OpenAIModelClient
+    from .deep_agent import DeepAgentClient
 
-    return OpenAIModelClient()
+    return DeepAgentClient()
 
 
 __all__ = ["ModelClient", "get_client", "ModelCallError"]

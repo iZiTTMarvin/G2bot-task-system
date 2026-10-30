@@ -5,7 +5,7 @@ import io
 import pytest
 from openpyxl import load_workbook
 
-from app.tools.validation import validate_content
+from app.tools.validation import rule_snapshot_id, validate_content
 from tests.conftest import generate, make_batch
 from tests.test_runs import ScriptedClient, _install
 
@@ -48,7 +48,7 @@ def test_numbered_and_grouped_materials_are_compared_by_quantity(pens, mismatch)
         {"name": "笔筒", "quantity": 1},
         *pens,
     ])
-    report = validate_content(task, "standard", "test-snapshot")
+    report = validate_content(task, "standard", rule_snapshot_id())
     material_issues = [issue for issue in report["issues"] if issue["code"] == "MATERIALS_MISMATCH"]
     assert bool(material_issues) is mismatch, material_issues
 
