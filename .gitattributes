@@ -1,0 +1,2 @@
+# Skill 清单按字节校验，检出时不得转换行尾。
+skills/** -text whitespace=cr-at-eol
