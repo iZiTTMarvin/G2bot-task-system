@@ -1,6 +1,6 @@
 # G2 任务系统
 
-本地 G2 遥操作采集任务生成与审核系统。后端使用 FastAPI + SQLite，前端使用 React + Vite + Ant Design。
+本地 G2 遥操作采集任务生成与审核系统。后端使用 FastAPI + SQLite + Deep Agents，前端使用 React + Vite + Ant Design。
 
 ## 启动
 
@@ -12,7 +12,7 @@ Windows 已安装 Python 3.12+ 和 Node 20+ 后，在 PowerShell 中运行：
 .\start.bat dev     # 开发模式，前端 5173、后端 8000
 ```
 
-访问 <http://127.0.0.1:8000>。首次启动会安装依赖；正式模式和演示模式每次启动都会构建当前前端，构建失败不会启动服务。
+访问 <http://127.0.0.1:8000>。启动时检查并安装当前依赖；正式模式和演示模式每次启动都会构建当前前端，构建失败不会启动服务。
 
 如果 8000 已被占用，可以在启动前设置 `$env:G2_PORT = '8001'`，随后运行 `.\start.bat` 并访问对应端口。每个数据目录只能由一个服务实例使用；使用备用端口并行测试时，还需要通过 `G2_DATA_DIR` 指定独立数据目录。正常关闭时会等待当前后台作业结束，避免另一实例过早接管数据。
 
@@ -43,10 +43,11 @@ cd backend && .venv/Scripts/python -m uvicorn app.main:app --host 127.0.0.1 --po
 
 目录：
 
-- `backend/`：API、生成与审核作业、SQLite、模型客户端、规则校验和测试。
+- `backend/`：API、生成与审核作业、SQLite、Deep Agents 运行入口、规则工具和测试。
 - `frontend/`：任务生成、任务集、人工审核和 API 设置。
-- `skills/snapshot/`：规则校验脚本与规则快照。
+- `skills/snapshot/`：从指定 `.kiro` 上游完整导入的规则、脚本与资源。
+- `skills/generator/`、`skills/reviewer/`：两个独立角色的 Skill，共用领域规则。
 - `data/`：本地数据库、附件、导出文件和模型配置。
 - `docs/`：产品与接口设计资料。
 
-已验证后端测试、前端类型检查、lint 与构建，以及隔离数据下的连接失败 → 刷新恢复 → 原任务集重新生成、OpenAI/Anthropic 本地 HTTP 协议 → 审核优化版本 → 人工通过流程和 390/768/1440px 审核详情布局。外部真实模型服务未在本次修改中调用；本地协议与确定性内容不能替代真实模型质量验收。
+正式模式由两个独立 Deep Agents 实例完成生成和审查，支持 Skill 加载、历史检索、物料汇总、确定性检查及有限修订。保留原有前后端契约、人工决定和版本记录。运行方式、规则更新、执行证据及验证限制见 [Deep Agents 实现说明](docs/DeepAgents实现.md)。
