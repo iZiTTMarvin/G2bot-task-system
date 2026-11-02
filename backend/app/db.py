@@ -122,6 +122,27 @@ CREATE TABLE IF NOT EXISTS exports (
   file_path TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS conversations (
+  id TEXT PRIMARY KEY,
+  agent_role TEXT NOT NULL,
+  title TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_conversations_role ON conversations(agent_role);
+CREATE TABLE IF NOT EXISTS messages (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  batch_id TEXT,
+  run_id TEXT,
+  attachments_json TEXT NOT NULL DEFAULT '[]',
+  task_ids_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_messages_run ON messages(run_id);
 CREATE TABLE IF NOT EXISTS idempotency_records (
   scope TEXT NOT NULL,
   key TEXT NOT NULL,
@@ -156,7 +177,23 @@ def get_conn() -> sqlite3.Connection:
 def init_db() -> None:
     conn = get_conn()
     conn.executescript(SCHEMA)
+    _migrate(conn)
     conn.commit()
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
+    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """旧库增量升级：只加列，不改既有数据。"""
+    _ensure_column(conn, "batches", "conversation_id", "TEXT")
+    _ensure_column(conn, "batches", "task_mode_default", "TEXT")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_batches_conversation ON batches(conversation_id)"
+    )
 
 
 @contextmanager

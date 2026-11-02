@@ -31,7 +31,7 @@ from . import batches as batches_service
 from . import render
 from . import tasks as tasks_service
 
-REVIEW_ALLOWED_STATUSES = set(TASK_STATUSES) - {"approved", "ai_reviewing"}
+REVIEW_ALLOWED_STATUSES = set(TASK_STATUSES) - {"ai_reviewing"}
 
 FinishFn = Callable[[sqlite3.Connection, int, Any], None]
 
@@ -129,7 +129,7 @@ def start_generate(batch_id: str, *, finish: FinishFn | None = None) -> dict[str
             task_id=None,
             task_ids=[],
             kind="generate_batch",
-            total=batch["task_count"],
+            total=max(batch["task_count"], 1),
             config_snapshot=_config_snapshot(),
         )
         payload = render.render_run(run)
@@ -236,6 +236,56 @@ def start_revise(
     )
 
 
+def start_review_batch(
+    task_ids: list[str], *, finish: FinishFn | None = None
+) -> dict[str, Any]:
+    """批量送审：一个作业占住整组任务，逐条走审核，进度按条推进。"""
+    if not task_ids:
+        from ..errors import validation_error
+
+        raise validation_error("至少选择一条任务", ["task_ids"])
+    if len(set(task_ids)) != len(task_ids):
+        from ..errors import validation_error
+
+        raise validation_error("任务列表存在重复", ["task_ids"])
+
+    with db.tx() as conn:
+        rows = []
+        for task_id in task_ids:
+            task = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if task is None:
+                raise not_found(f"任务 {task_id}")
+            rows.append(task)
+        blocked = [t["id"] for t in rows if t["busy_run_id"]]
+        if blocked:
+            raise task_busy(blocked[0])
+        invalid = [t["id"] for t in rows if t["status"] not in REVIEW_ALLOWED_STATUSES]
+        if invalid:
+            raise invalid_state(f"当前状态 {rows[0]['status']} 不允许送审")
+        if _active_run(conn) is not None:
+            raise run_busy()
+        run = _create_run(
+            conn,
+            batch_id=rows[0]["batch_id"],
+            task_id=None,
+            task_ids=list(task_ids),
+            kind="review_batch",
+            total=len(task_ids),
+            config_snapshot=_config_snapshot(),
+        )
+        now = db.utcnow()
+        for task in rows:
+            conn.execute(
+                "UPDATE tasks SET busy_run_id=?, status='pending_review',"
+                " revision=revision+1, updated_at=? WHERE id=?",
+                (run["id"], now, task["id"]),
+            )
+        payload = render.render_run(run)
+        if finish:
+            finish(conn, 202, payload)
+        return payload
+
+
 def get_run(run_id: str) -> dict[str, Any]:
     conn = db.get_conn()
     row = conn.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
@@ -258,6 +308,11 @@ def _fail_run(run_id: str, error: ModelCallError | ApiError) -> None:
     info = _error_info(error.code, error.message, getattr(error, "details", None), ref=run_id)
     _update_run(run_id, status="failed", error_json=json.dumps(info, ensure_ascii=False),
                 finished_at=db.utcnow())
+    from . import conversations as conversations_service
+
+    conversations_service.post_agent_message(
+        run_id, f"这次没跑完：{error.message}。要求和附件都还在，可以直接重试。"
+    )
 
 
 def _finish_run(run_id: str, *, failed: int, stage: str = "done") -> None:
@@ -424,12 +479,15 @@ def _execute_generate_batch(run_id: str) -> None:
         if not collection_name or not isinstance(raw_tasks, list):
             raise ModelCallError("MODEL_PROTOCOL_ERROR", "生成结果缺少任务集名称或任务数组")
         contents = [tasks_service.normalize_content(item) for item in raw_tasks]
-        if len(contents) != snapshot["task_count"]:
+        # 条数为 0 表示由 Agent 按物料库能支撑的活动数决定，不再硬校验。
+        if snapshot["task_count"] > 0 and len(contents) != snapshot["task_count"]:
             raise ModelCallError(
                 "MODEL_PROTOCOL_ERROR",
                 f"要求生成 {snapshot['task_count']} 条任务，模型返回 {len(contents)} 条",
                 {"expected": snapshot["task_count"], "actual": len(contents)},
             )
+        if not contents:
+            raise ModelCallError("MODEL_PROTOCOL_ERROR", "模型没有返回任何任务")
     except ModelCallError as exc:
         _fail_run(run_id, exc)
         return
@@ -447,7 +505,7 @@ def _execute_generate_batch(run_id: str) -> None:
         if existing:
             raise invalid_state("批次已有任务，拒绝重复生成")
         now = db.utcnow()
-        c.execute("UPDATE batches SET name=? WHERE id=?", (collection_name, batch["id"]))
+        # 批次名由用户第一句话决定，不再被模型返回的 name 覆盖（原来会让"任务集"名字每次都不一样）
         for index, content in enumerate(contents, 1):
             task_id = ids.new_id("task")
             version_id = ids.new_id("ver")
@@ -490,13 +548,41 @@ def _execute_generate_batch(run_id: str) -> None:
             (json.dumps(task_ids), run_id),
         )
 
-    _update_run(run_id, stage="reviewing")
+    _update_run(run_id, stage="reviewing", progress_total=len(task_ids))
     failed = 0
     for task_id in task_ids:
         failed += _review_flow(run_id, task_id, reference_text=reference)
 
     _release_tasks(task_ids)
     _finish_run(run_id, failed=failed, stage="done" if failed == 0 else "reviewing")
+    _post_generate_message(run_id, task_ids, collection_name, failed=failed)
+
+
+def _post_generate_message(
+    run_id: str, task_ids: list[str], generated_title: str, *, failed: int
+) -> None:
+    """生成结束后写一条 Agent 回复：条数、名字、审核结果，以及下一步建议。"""
+    from . import conversations as conversations_service
+
+    conn = db.get_conn()
+    placeholders = ",".join("?" for _ in task_ids)
+    rows = conn.execute(
+        f"SELECT name, status, step_count FROM tasks WHERE id IN ({placeholders})"
+        f" ORDER BY seq ASC",
+        task_ids,
+    ).fetchall()
+    passed = sum(1 for r in rows if r["status"] == "human_pending")
+    lines = [
+        f"生成 {len(rows)} 条任务（模型起名：{generated_title}），"
+        f"其中 {passed} 条通过 AI 审核、{len(rows) - passed} 条需要人工处理。",
+    ]
+    for index, row in enumerate(rows, 1):
+        flag = "" if row["status"] == "human_pending" else "（待处理）"
+        lines.append(f"{index}. {row['name']} · {row['step_count']} 步{flag}")
+    if failed:
+        lines.append(f"有 {failed} 条技术失败，可在右侧单条重审。")
+    lines.append("看完可以直接「送审」，或者告诉我改哪里。")
+    conversations_service.post_agent_message(run_id, "\n".join(lines))
 
 
 def _execute_task_run(run_id: str) -> None:
@@ -575,6 +661,61 @@ def _execute_task_run(run_id: str) -> None:
     _finish_run(run_id, failed=failed, stage="done" if failed == 0 else "reviewing")
 
 
+def _execute_review_batch(run_id: str) -> None:
+    """批量送审：逐条审核，允许跨批次（每条用它自己批次的规则快照）。"""
+    conn = db.get_conn()
+    run = conn.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+    task_ids = json.loads(run["task_ids_json"])
+    _update_run(run_id, status="running", started_at=db.utcnow(), stage="reviewing")
+    failed = 0
+    for task_id in task_ids:
+        task = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+        if task is None:
+            failed += 1
+            continue
+        batch = conn.execute("SELECT * FROM batches WHERE id=?", (task["batch_id"],)).fetchone()
+        snapshot = batches_service.get_snapshot(batch)
+        reference = (snapshot["reference_text"] + "\n\n" + snapshot["attachments_text"]).strip()
+        try:
+            failed += _review_flow(run_id, task_id, reference_text=reference)
+        except ApiError as exc:  # 单条技术失败不拖垮整批
+            _set_task_status(task_id, "review_failed", last_error=_error_info(
+                exc.code, exc.message, exc.details, ref=run_id
+            ))
+            failed += 1
+    _release_tasks(task_ids)
+    _finish_run(run_id, failed=failed, stage="done" if failed == 0 else "reviewing")
+    _post_review_message(run_id, task_ids, failed=failed)
+
+
+def _post_review_message(run_id: str, task_ids: list[str], *, failed: int) -> None:
+    from . import conversations as conversations_service
+
+    conn = db.get_conn()
+    placeholders = ",".join("?" for _ in task_ids)
+    changed = conn.execute(
+        f"SELECT COUNT(*) AS n FROM task_versions WHERE run_id=? AND author_type='ai_revision'",
+        (run_id,),
+    ).fetchone()["n"]
+    verdicts = conn.execute(
+        "SELECT verdict, COUNT(*) AS n FROM reviews WHERE run_id=? GROUP BY verdict", (run_id,)
+    ).fetchall()
+    by_verdict = {row["verdict"]: row["n"] for row in verdicts}
+    pending = conn.execute(
+        f"SELECT COUNT(*) AS n FROM tasks WHERE id IN ({placeholders}) AND status='human_pending'",
+        task_ids,
+    ).fetchone()["n"]
+    lines = [
+        f"审完 {len(task_ids)} 条：{by_verdict.get('pass', 0)} 条判定通过，"
+        f"{by_verdict.get('needs_changes', 0)} 条有问题，其中 {changed} 条我直接改了正文。",
+    ]
+    if pending:
+        lines.append(f"{pending} 条等你确认；右侧可以逐条看改了什么、直接编辑，再导出。")
+    if failed:
+        lines.append(f"{failed} 条技术失败，可以单条重审。")
+    conversations_service.post_agent_message(run_id, "\n".join(lines))
+
+
 def execute_queued_run(run_id: str) -> None:
     row = db.get_conn().execute(
         "SELECT r.kind, b.rule_snapshot_id FROM runs r JOIN batches b ON b.id=r.batch_id WHERE r.id=?",
@@ -586,6 +727,8 @@ def execute_queued_run(run_id: str) -> None:
         with trace_run(run_id, row["rule_snapshot_id"]):
             if row["kind"] == "generate_batch":
                 _execute_generate_batch(run_id)
+            elif row["kind"] == "review_batch":
+                _execute_review_batch(run_id)
             else:
                 _execute_task_run(run_id)
     except ApiError as exc:

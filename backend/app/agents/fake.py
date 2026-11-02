@@ -51,9 +51,11 @@ class FakeModelClient:
         self, *, goal: str, task_count: int, task_mode: str, reference_text: str
     ) -> dict[str, Any]:
         marker = "模拟退回" if "退回" in goal else ""
+        # task_count=0 表示条数由 Agent 决定；演示模式固定给 3 条
+        count = task_count if task_count > 0 else 3
         return {
             "name": "居家桌面任务集",
-            "tasks": [_content(i + 1, "", task_mode, marker) for i in range(task_count)],
+            "tasks": [_content(i + 1, "", task_mode, marker) for i in range(count)],
         }
 
     def revise_task(

@@ -23,7 +23,7 @@ from langgraph.errors import GraphRecursionError
 from pydantic import ValidationError
 
 from ..errors import ApiError, ModelCallError
-from ..prompts_spec import STEP_RANGES
+from ..prompts_spec import STEP_GUIDE
 from ..tools.skill_bundle import load_bundle
 from .contracts import GeneratedBatch, ReviewedTask
 from .models import make_model
@@ -78,7 +78,8 @@ class DeepAgentClient:
         result = self._invoke("generator", task_mode, {
             "goal": goal, "task_count": task_count, "reference_text": reference_text,
         })
-        if len(result["tasks"]) != task_count:
+        # task_count 为 0 表示由模型按物料库自定条数，此时不做数量校验
+        if task_count > 0 and len(result["tasks"]) != task_count:
             raise ModelCallError("MODEL_PROTOCOL_ERROR", "生成条数与要求不一致",
                                  {"expected": task_count, "actual": len(result["tasks"])})
         return result
@@ -129,11 +130,10 @@ class DeepAgentClient:
             )
             backend = StateBackend()
             tools = TaskTools(bundle, task_mode, trace)
-            lo, hi = STEP_RANGES[task_mode]
             schema = GeneratedBatch if role == "generator" else ReviewedTask
             agent = create_deep_agent(
                 model=model, name=role, backend=backend, subagents=[],
-                system_prompt=role_prompt(role, task_mode, lo, hi),
+                system_prompt=role_prompt(role, STEP_GUIDE[task_mode]),
                 skills=["/skills/"], memory=MEMORY_PATHS, tools=tools.build(),
                 middleware=[
                     FilesystemMiddleware(backend=backend, tools=["ls", "read_file", "glob", "grep"]),

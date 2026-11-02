@@ -2,113 +2,25 @@
   "openapi": "3.1.0",
   "info": {
     "title": "G2 Task System Demo API",
-    "version": "0.1.0",
-    "description": "设计基线，尚未实现。业务语义见 前后端接口契约.md。一个生成员、一个审核员与人工审核；无经理和多 Agent 调度。"
+    "version": "0.2.0"
   },
-  "servers": [
-    {
-      "url": "/api/v1"
-    }
-  ],
-  "tags": [
-    {
-      "name": "system"
-    },
-    {
-      "name": "settings"
-    },
-    {
-      "name": "attachments"
-    },
-    {
-      "name": "batches"
-    },
-    {
-      "name": "runs"
-    },
-    {
-      "name": "tasks"
-    },
-    {
-      "name": "exports"
-    }
-  ],
   "paths": {
-    "/health": {
+    "/api/v1/health": {
       "get": {
-        "operationId": "getHealth",
         "tags": [
           "system"
         ],
-        "summary": "检查服务与数据库",
-        "parameters": [],
+        "summary": "Health",
+        "operationId": "health_api_v1_health_get",
         "responses": {
           "200": {
-            "description": "成功",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Health"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "字段、配置或规则校验失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Health Api V1 Health Get"
                 }
               }
             }
@@ -116,86 +28,22 @@
         }
       }
     },
-    "/settings": {
+    "/api/v1/settings": {
       "get": {
-        "operationId": "getSettings",
         "tags": [
           "settings"
         ],
-        "summary": "读取配置，不返回密钥",
-        "parameters": [],
+        "summary": "Get Settings",
+        "operationId": "get_settings_api_v1_settings_get",
         "responses": {
           "200": {
-            "description": "成功",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Settings"
-                },
-                "examples": {
-                  "configured": {
-                    "$ref": "#/components/examples/SettingsExample"
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "字段、配置或规则校验失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Settings Api V1 Settings Get"
                 }
               }
             }
@@ -203,279 +51,139 @@
         }
       },
       "put": {
-        "operationId": "updateSettings",
         "tags": [
           "settings"
         ],
-        "summary": "更新配置；活动作业时拒绝",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Settings"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "字段、配置或规则校验失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        },
+        "summary": "Update Settings",
+        "operationId": "update_settings_api_v1_settings_put",
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/SettingsUpdate"
               }
             }
-          }
-        }
-      }
-    },
-    "/attachments": {
-      "post": {
-        "operationId": "uploadAttachment",
-        "tags": [
-          "attachments"
-        ],
-        "summary": "上传并同步解析资料",
-        "parameters": [],
+          },
+          "required": true
+        },
         "responses": {
-          "201": {
-            "description": "成功",
+          "200": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Attachment"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Update Settings Api V1 Settings Put"
                 }
               }
             }
           },
           "422": {
-            "description": "字段、配置或规则校验失败",
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
           }
-        },
+        }
+      }
+    },
+    "/api/v1/attachments": {
+      "post": {
+        "tags": [
+          "attachments"
+        ],
+        "summary": "Upload Attachment",
+        "operationId": "upload_attachment_api_v1_attachments_post",
         "requestBody": {
           "required": true,
           "content": {
             "multipart/form-data": {
               "schema": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "file": {
-                    "type": "string",
-                    "format": "binary",
-                    "description": "TXT/MD/CSV/XLSX，最多 5 MiB"
-                  }
-                },
-                "required": [
-                  "file"
-                ]
+                "$ref": "#/components/schemas/Body_upload_attachment_api_v1_attachments_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Upload Attachment Api V1 Attachments Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
         }
       },
       "get": {
-        "operationId": "listAttachments",
         "tags": [
           "attachments"
         ],
-        "summary": "分页资料摘要",
+        "summary": "List Attachments",
+        "operationId": "list_attachments_api_v1_attachments_get",
         "parameters": [
           {
-            "$ref": "#/components/parameters/Page"
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
           },
           {
-            "$ref": "#/components/parameters/PageSize"
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "成功",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AttachmentPage"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Attachments Api V1 Attachments Get"
                 }
               }
             }
           },
           "422": {
-            "description": "字段、配置或规则校验失败",
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -483,13 +191,13 @@
         }
       }
     },
-    "/attachments/{attachment_id}": {
+    "/api/v1/attachments/{attachment_id}": {
       "get": {
-        "operationId": "getAttachment",
         "tags": [
           "attachments"
         ],
-        "summary": "读取解析文本",
+        "summary": "Get Attachment",
+        "operationId": "get_attachment_api_v1_attachments__attachment_id__get",
         "parameters": [
           {
             "name": "attachment_id",
@@ -497,78 +205,29 @@
             "required": true,
             "schema": {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 128
+              "title": "Attachment Id"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "成功",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Attachment"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Attachment Api V1 Attachments  Attachment Id  Get"
                 }
               }
             }
           },
           "422": {
-            "description": "字段、配置或规则校验失败",
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -576,90 +235,13 @@
         }
       }
     },
-    "/batches": {
+    "/api/v1/batches": {
       "post": {
-        "operationId": "createBatch",
         "tags": [
           "batches"
         ],
-        "summary": "创建批次与资料快照，不调用模型",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdempotencyKey"
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Batch"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "字段、配置或规则校验失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        },
+        "summary": "Create Batch",
+        "operationId": "create_batch_api_v1_batches_post",
         "requestBody": {
           "required": true,
           "content": {
@@ -669,89 +251,78 @@
               }
             }
           }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
         }
       },
       "get": {
-        "operationId": "listBatches",
         "tags": [
           "batches"
         ],
-        "summary": "分页批次",
+        "summary": "List Batches",
+        "operationId": "list_batches_api_v1_batches_get",
         "parameters": [
           {
-            "$ref": "#/components/parameters/Page"
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
           },
           {
-            "$ref": "#/components/parameters/PageSize"
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "成功",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BatchPage"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Batches Api V1 Batches Get"
                 }
               }
             }
           },
           "422": {
-            "description": "字段、配置或规则校验失败",
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -759,13 +330,13 @@
         }
       }
     },
-    "/batches/{batch_id}": {
+    "/api/v1/batches/{batch_id}": {
       "get": {
-        "operationId": "getBatch",
         "tags": [
           "batches"
         ],
-        "summary": "批次详情与任务状态计数",
+        "summary": "Get Batch",
+        "operationId": "get_batch_api_v1_batches__batch_id__get",
         "parameters": [
           {
             "name": "batch_id",
@@ -773,78 +344,29 @@
             "required": true,
             "schema": {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 128
+              "title": "Batch Id"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "成功",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Batch"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Batch Api V1 Batches  Batch Id  Get"
                 }
               }
             }
           },
           "422": {
-            "description": "字段、配置或规则校验失败",
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -852,13 +374,13 @@
         }
       }
     },
-    "/batches/{batch_id}/generate": {
+    "/api/v1/batches/{batch_id}/generate": {
       "post": {
-        "operationId": "generateBatch",
         "tags": [
           "runs"
         ],
-        "summary": "首次生成草稿并逐条审核",
+        "summary": "Generate Batch",
+        "operationId": "generate_batch_api_v1_batches__batch_id__generate_post",
         "parameters": [
           {
             "name": "batch_id",
@@ -866,105 +388,56 @@
             "required": true,
             "schema": {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 128
+              "title": "Batch Id"
             }
-          },
-          {
-            "$ref": "#/components/parameters/IdempotencyKey"
           }
         ],
-        "responses": {
-          "202": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Run"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "字段、配置或规则校验失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/EmptyRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
               }
             }
           }
         },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EmptyRequest"
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
         }
       }
     },
-    "/runs/{run_id}": {
+    "/api/v1/runs/{run_id}": {
       "get": {
-        "operationId": "getRun",
         "tags": [
           "runs"
         ],
-        "summary": "轮询作业状态",
+        "summary": "Get Run",
+        "operationId": "get_run_api_v1_runs__run_id__get",
         "parameters": [
           {
             "name": "run_id",
@@ -972,83 +445,29 @@
             "required": true,
             "schema": {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 128
+              "title": "Run Id"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "成功",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Run"
-                },
-                "examples": {
-                  "running": {
-                    "$ref": "#/components/examples/RunExample"
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Run Api V1 Runs  Run Id  Get"
                 }
               }
             }
           },
           "422": {
-            "description": "字段、配置或规则校验失败",
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -1056,22 +475,28 @@
         }
       }
     },
-    "/tasks": {
+    "/api/v1/tasks": {
       "get": {
-        "operationId": "listTasks",
         "tags": [
           "tasks"
         ],
-        "summary": "分页任务与忽略状态筛选的页签计数",
+        "summary": "List Tasks",
+        "operationId": "list_tasks_api_v1_tasks_get",
         "parameters": [
           {
             "name": "batch_id",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Batch Id"
             }
           },
           {
@@ -1079,7 +504,15 @@
             "in": "query",
             "required": false,
             "schema": {
-              "$ref": "#/components/schemas/TaskStatus"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
             }
           },
           {
@@ -1087,84 +520,61 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "maxLength": 200
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
             }
           },
           {
-            "$ref": "#/components/parameters/Page"
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
           },
           {
-            "$ref": "#/components/parameters/PageSize"
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "成功",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TaskPage"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Tasks Api V1 Tasks Get"
                 }
               }
             }
           },
           "422": {
-            "description": "字段、配置或规则校验失败",
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -1172,13 +582,13 @@
         }
       }
     },
-    "/tasks/{task_id}": {
+    "/api/v1/tasks/{task_id}": {
       "get": {
-        "operationId": "getTask",
         "tags": [
           "tasks"
         ],
-        "summary": "完整任务详情与版本关联的审核意见",
+        "summary": "Get Task",
+        "operationId": "get_task_api_v1_tasks__task_id__get",
         "parameters": [
           {
             "name": "task_id",
@@ -1186,78 +596,29 @@
             "required": true,
             "schema": {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 128
+              "title": "Task Id"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "成功",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TaskDetail"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Task Api V1 Tasks  Task Id  Get"
                 }
               }
             }
           },
           "422": {
-            "description": "字段、配置或规则校验失败",
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -1265,13 +626,13 @@
         }
       }
     },
-    "/tasks/{task_id}/versions": {
+    "/api/v1/tasks/{task_id}/versions": {
       "get": {
-        "operationId": "listTaskVersions",
         "tags": [
           "tasks"
         ],
-        "summary": "完整版本列表，版本号降序",
+        "summary": "List Task Versions",
+        "operationId": "list_task_versions_api_v1_tasks__task_id__versions_get",
         "parameters": [
           {
             "name": "task_id",
@@ -1279,78 +640,29 @@
             "required": true,
             "schema": {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 128
+              "title": "Task Id"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "成功",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VersionList"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Task Versions Api V1 Tasks  Task Id  Versions Get"
                 }
               }
             }
           },
           "422": {
-            "description": "字段、配置或规则校验失败",
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -1358,11 +670,11 @@
         }
       },
       "post": {
-        "operationId": "saveTaskVersion",
         "tags": [
           "tasks"
         ],
-        "summary": "保存人工新版本；不自动通过",
+        "summary": "Save Task Version",
+        "operationId": "save_task_version_api_v1_tasks__task_id__versions_post",
         "parameters": [
           {
             "name": "task_id",
@@ -1370,91 +682,10 @@
             "required": true,
             "schema": {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 128
+              "title": "Task Id"
             }
-          },
-          {
-            "$ref": "#/components/parameters/IdempotencyKey"
           }
         ],
-        "responses": {
-          "201": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskDetail"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "conflict": {
-                    "$ref": "#/components/examples/RevisionConflict"
-                  }
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "字段、配置或规则校验失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        },
         "requestBody": {
           "required": true,
           "content": {
@@ -1464,16 +695,36 @@
               }
             }
           }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
         }
       }
     },
-    "/tasks/{task_id}/reviews": {
+    "/api/v1/tasks/{task_id}/reviews": {
       "get": {
-        "operationId": "listTaskReviews",
         "tags": [
           "tasks"
         ],
-        "summary": "AI 审核历史，时间降序",
+        "summary": "List Task Reviews",
+        "operationId": "list_task_reviews_api_v1_tasks__task_id__reviews_get",
         "parameters": [
           {
             "name": "task_id",
@@ -1481,78 +732,29 @@
             "required": true,
             "schema": {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 128
+              "title": "Task Id"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "成功",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ReviewList"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Task Reviews Api V1 Tasks  Task Id  Reviews Get"
                 }
               }
             }
           },
           "422": {
-            "description": "字段、配置或规则校验失败",
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -1560,225 +762,13 @@
         }
       }
     },
-    "/tasks/{task_id}/review": {
-      "post": {
-        "operationId": "reviewTask",
-        "tags": [
-          "runs"
-        ],
-        "summary": "重新校验并审核当前版本",
-        "parameters": [
-          {
-            "name": "task_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            }
-          },
-          {
-            "$ref": "#/components/parameters/IdempotencyKey"
-          }
-        ],
-        "responses": {
-          "202": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Run"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "字段、配置或规则校验失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/VersionAction"
-              }
-            }
-          }
-        }
-      }
-    },
-    "/tasks/{task_id}/revise": {
-      "post": {
-        "operationId": "reviseTask",
-        "tags": [
-          "runs"
-        ],
-        "summary": "带反馈重写新版本并审核",
-        "parameters": [
-          {
-            "name": "task_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            }
-          },
-          {
-            "$ref": "#/components/parameters/IdempotencyKey"
-          }
-        ],
-        "responses": {
-          "202": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Run"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "字段、配置或规则校验失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ReviseRequest"
-              }
-            }
-          }
-        }
-      }
-    },
-    "/tasks/{task_id}/decisions": {
-      "post": {
-        "operationId": "decideTask",
+    "/api/v1/tasks/{task_id}/decisions": {
+      "get": {
         "tags": [
           "tasks"
         ],
-        "summary": "人工通过或驳回当前版本",
+        "summary": "List Task Decisions",
+        "operationId": "list_task_decisions_api_v1_tasks__task_id__decisions_get",
         "parameters": [
           {
             "name": "task_id",
@@ -1786,86 +776,52 @@
             "required": true,
             "schema": {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 128
+              "title": "Task Id"
             }
-          },
-          {
-            "$ref": "#/components/parameters/IdempotencyKey"
           }
         ],
         "responses": {
-          "201": {
-            "description": "成功",
+          "200": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DecisionResult"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Task Decisions Api V1 Tasks  Task Id  Decisions Get"
                 }
               }
             }
           },
           "422": {
-            "description": "字段、配置或规则校验失败",
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
           }
-        },
+        }
+      },
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Decide Task",
+        "operationId": "decide_task_api_v1_tasks__task_id__decisions_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -1875,14 +831,36 @@
               }
             }
           }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
         }
-      },
-      "get": {
-        "operationId": "listTaskDecisions",
+      }
+    },
+    "/api/v1/tasks/{task_id}/review": {
+      "post": {
         "tags": [
-          "tasks"
+          "runs"
         ],
-        "summary": "人工决定历史，时间降序",
+        "summary": "Review Task",
+        "operationId": "review_task_api_v1_tasks__task_id__review_post",
         "parameters": [
           {
             "name": "task_id",
@@ -1890,78 +868,35 @@
             "required": true,
             "schema": {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 128
+              "title": "Task Id"
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionAction"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": {
-            "description": "人工决定记录",
+          "202": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DecisionList"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "错误，语义见接口契约",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "错误，语义见接口契约",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "错误，语义见接口契约",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "错误，语义见接口契约",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
+                "schema": {}
               }
             }
           },
           "422": {
-            "description": "错误，语义见接口契约",
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "错误，语义见接口契约",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -1969,109 +904,522 @@
         }
       }
     },
-    "/exports": {
+    "/api/v1/tasks/{task_id}/revise": {
       "post": {
-        "operationId": "createExport",
         "tags": [
-          "exports"
+          "runs"
         ],
-        "summary": "导出同批已通过版本",
+        "summary": "Revise Task",
+        "operationId": "revise_task_api_v1_tasks__task_id__revise_post",
         "parameters": [
           {
-            "$ref": "#/components/parameters/IdempotencyKey"
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/conversations": {
+      "post": {
+        "tags": [
+          "conversations"
+        ],
+        "summary": "Create Conversation",
+        "operationId": "create_conversation_api_v1_conversations_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationCreate"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
-            "description": "成功",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Export"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Create Conversation Api V1 Conversations Post"
                 }
               }
             }
           },
           "422": {
-            "description": "字段、配置或规则校验失败",
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
           }
-        },
+        }
+      },
+      "get": {
+        "tags": [
+          "conversations"
+        ],
+        "summary": "List Conversations",
+        "operationId": "list_conversations_api_v1_conversations_get",
+        "parameters": [
+          {
+            "name": "agent_role",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Role"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Conversations Api V1 Conversations Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/conversations/{conversation_id}": {
+      "get": {
+        "tags": [
+          "conversations"
+        ],
+        "summary": "Get Conversation",
+        "operationId": "get_conversation_api_v1_conversations__conversation_id__get",
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Conversation Api V1 Conversations  Conversation Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "conversations"
+        ],
+        "summary": "Rename Conversation",
+        "operationId": "rename_conversation_api_v1_conversations__conversation_id__patch",
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Rename Conversation Api V1 Conversations  Conversation Id  Patch"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "conversations"
+        ],
+        "summary": "Delete Conversation",
+        "operationId": "delete_conversation_api_v1_conversations__conversation_id__delete",
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/conversations/{conversation_id}/messages": {
+      "get": {
+        "tags": [
+          "conversations"
+        ],
+        "summary": "List Messages",
+        "operationId": "list_messages_api_v1_conversations__conversation_id__messages_get",
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Messages Api V1 Conversations  Conversation Id  Messages Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "conversations"
+        ],
+        "summary": "Post Message",
+        "operationId": "post_message_api_v1_conversations__conversation_id__messages_post",
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/conversations/{conversation_id}/tasks": {
+      "get": {
+        "tags": [
+          "conversations"
+        ],
+        "summary": "Conversation Tasks",
+        "operationId": "conversation_tasks_api_v1_conversations__conversation_id__tasks_get",
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Conversation Tasks Api V1 Conversations  Conversation Id  Tasks Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/submit": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Submit Tasks",
+        "description": "批量送审：不经过会话也能用（任务列表勾选后直接送）。",
+        "operationId": "submit_tasks_api_v1_tasks_submit_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/exports": {
+      "post": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Create Export",
+        "operationId": "create_export_api_v1_exports_post",
+        "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ExportRequest"
               }
             }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
         }
       }
     },
-    "/exports/{export_id}/download": {
+    "/api/v1/exports/{export_id}/download": {
       "get": {
-        "operationId": "downloadExport",
         "tags": [
           "exports"
         ],
-        "summary": "下载 XLSX 文件",
+        "summary": "Download Export",
+        "operationId": "download_export_api_v1_exports__export_id__download_get",
         "parameters": [
           {
             "name": "export_id",
@@ -2079,87 +1427,25 @@
             "required": true,
             "schema": {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 128
+              "title": "Export Id"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "XLSX 文件",
-            "headers": {
-              "Content-Disposition": {
-                "description": "attachment；包含中文兼容文件名",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入内容无法处理或无正文变更",
+            "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "对象不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态、版本、幂等或作业冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "文件或资料超限",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
+                "schema": {}
               }
             }
           },
           "422": {
-            "description": "字段、配置或规则校验失败",
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "内部错误；不返回凭据或堆栈",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -2169,1437 +1455,506 @@
     }
   },
   "components": {
-    "parameters": {
-      "IdempotencyKey": {
-        "name": "Idempotency-Key",
-        "in": "header",
-        "required": true,
-        "description": "同一次操作重试复用；新操作换键。1–128 字符。",
-        "schema": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        }
-      },
-      "Page": {
-        "name": "page",
-        "in": "query",
-        "schema": {
-          "type": "integer",
-          "minimum": 1,
-          "default": 1
-        }
-      },
-      "PageSize": {
-        "name": "page_size",
-        "in": "query",
-        "schema": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 100,
-          "default": 20
-        }
-      }
-    },
     "schemas": {
-      "TaskStatus": {
-        "type": "string",
-        "enum": [
-          "pending_review",
-          "ai_reviewing",
-          "human_pending",
-          "ai_rejected",
-          "review_failed",
-          "approved",
-          "rejected"
-        ]
-      },
-      "ErrorInfo": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          },
-          "details": {
-            "type": "object",
-            "additionalProperties": true
-          },
-          "request_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "code",
-          "message",
-          "details",
-          "request_id"
-        ]
-      },
-      "ErrorResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "error": {
-            "$ref": "#/components/schemas/ErrorInfo"
-          }
-        },
-        "required": [
-          "error"
-        ]
-      },
-      "Health": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "status": {
-            "type": "string",
-            "const": "ok"
-          },
-          "database": {
-            "type": "string",
-            "const": "ok"
-          },
-          "contract_version": {
-            "type": "string",
-            "const": "0.1.0"
-          }
-        },
-        "required": [
-          "status",
-          "database",
-          "contract_version"
-        ]
-      },
-      "Settings": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "api_format": {
-            "type": "string",
-            "enum": ["openai", "anthropic"]
-          },
-          "base_url": {
-            "type": "string"
-          },
-          "generation_model": {
-            "type": "string"
-          },
-          "review_model": {
-            "type": "string"
-          },
-          "api_key_set": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "api_format",
-          "base_url",
-          "generation_model",
-          "review_model",
-          "api_key_set"
-        ]
-      },
-      "SettingsUpdate": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "api_format": {
-            "type": "string",
-            "enum": ["openai", "anthropic"],
-            "description": "省略保留当前格式，旧配置默认 openai"
-          },
-          "base_url": {
-            "type": "string",
-            "format": "uri",
-            "minLength": 1,
-            "maxLength": 2000
-          },
-          "generation_model": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          },
-          "review_model": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          },
-          "api_key": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 4096,
-            "writeOnly": true
-          }
-        },
-        "required": [
-          "base_url",
-          "generation_model"
-        ]
-      },
-      "AttachmentSummary": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "filename": {
-            "type": "string"
-          },
-          "media_type": {
-            "type": "string"
-          },
-          "size_bytes": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "text_length": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "content_hash": {
-            "type": "string"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "filename",
-          "media_type",
-          "size_bytes",
-          "text_length",
-          "content_hash",
-          "created_at"
-        ]
-      },
-      "Attachment": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "filename": {
-            "type": "string"
-          },
-          "media_type": {
-            "type": "string"
-          },
-          "size_bytes": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "text_length": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "content_hash": {
-            "type": "string"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "parsed_text": {
-            "type": "string",
-            "maxLength": 50000
-          }
-        },
-        "required": [
-          "id",
-          "filename",
-          "media_type",
-          "size_bytes",
-          "text_length",
-          "content_hash",
-          "created_at",
-          "parsed_text"
-        ]
-      },
-      "AttachmentPage": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AttachmentSummary"
-            }
-          },
-          "total": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "page": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "page_size": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          }
-        },
-        "required": [
-          "items",
-          "total",
-          "page",
-          "page_size"
-        ]
-      },
-      "TaskCounts": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "pending_review": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "ai_reviewing": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "human_pending": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "ai_rejected": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "review_failed": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "approved": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "rejected": {
-            "type": "integer",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "pending_review",
-          "ai_reviewing",
-          "human_pending",
-          "ai_rejected",
-          "review_failed",
-          "approved",
-          "rejected"
-        ]
-      },
       "BatchCreate": {
-        "type": "object",
-        "additionalProperties": false,
         "properties": {
           "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 100
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
           },
           "goal": {
             "type": "string",
+            "maxLength": 10000,
             "minLength": 1,
-            "maxLength": 10000
+            "title": "Goal"
           },
           "task_count": {
             "type": "integer",
-            "minimum": 1,
-            "maximum": 10,
-            "default": 3
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Task Count",
+            "default": 0
           },
           "task_mode": {
             "type": "string",
-            "enum": [
-              "standard",
-              "long"
-            ],
-            "default": "long"
+            "pattern": "^(auto|standard|long)$",
+            "title": "Task Mode",
+            "default": "auto"
           },
           "reference_text": {
             "type": "string",
             "maxLength": 80000,
+            "title": "Reference Text",
             "default": ""
           },
           "attachment_ids": {
-            "type": "array",
             "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
+              "type": "string"
             },
+            "type": "array",
             "maxItems": 20,
-            "uniqueItems": true,
-            "default": []
+            "title": "Attachment Ids"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
           }
         },
+        "additionalProperties": false,
+        "type": "object",
         "required": [
-          "name",
           "goal"
         ],
-        "description": "reference_text 去除空白后非空，或 attachment_ids 至少一项；合计资料最多 80000 字符。"
+        "title": "BatchCreate"
       },
-      "Batch": {
-        "type": "object",
-        "additionalProperties": false,
+      "Body_upload_attachment_api_v1_attachments_post": {
         "properties": {
-          "id": {
+          "file": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "name": {
-            "type": "string"
-          },
-          "goal": {
-            "type": "string"
-          },
-          "task_count": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10
-          },
-          "task_mode": {
-            "type": "string",
-            "enum": [
-              "standard",
-              "long"
-            ]
-          },
-          "reference_text": {
-            "type": "string"
-          },
-          "attachment_ids": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            }
-          },
-          "rule_snapshot_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "task_counts": {
-            "$ref": "#/components/schemas/TaskCounts"
-          },
-          "latest_run_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "can_generate": {
-            "type": "boolean"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
           }
         },
-        "required": [
-          "id",
-          "name",
-          "goal",
-          "task_count",
-          "task_mode",
-          "reference_text",
-          "attachment_ids",
-          "rule_snapshot_id",
-          "task_counts",
-          "latest_run_id",
-          "can_generate",
-          "created_at"
-        ]
-      },
-      "BatchPage": {
         "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Batch"
-            }
-          },
-          "total": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "page": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "page_size": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          }
-        },
         "required": [
-          "items",
-          "total",
-          "page",
-          "page_size"
-        ]
-      },
-      "Material": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 100
-          },
-          "quantity": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 1000
-          }
-        },
-        "required": [
-          "name",
-          "quantity"
-        ]
-      },
-      "TaskContent": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          },
-          "steps": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 500
-            },
-            "minItems": 1,
-            "maxItems": 100
-          },
-          "materials": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Material"
-            },
-            "minItems": 1,
-            "maxItems": 100
-          }
-        },
-        "required": [
-          "name",
-          "steps",
-          "materials"
+          "file"
         ],
-        "description": "结构上允许保存不合领域规则的草稿；规则步数、命名、物料一致性由 ValidationReport 表达。名称去除空白，物料名称不得重复。"
+        "title": "Body_upload_attachment_api_v1_attachments_post"
       },
-      "ValidationIssue": {
-        "type": "object",
-        "additionalProperties": false,
+      "ConversationCreate": {
         "properties": {
-          "code": {
-            "type": "string"
-          },
-          "severity": {
+          "agent_role": {
             "type": "string",
             "enum": [
-              "error",
-              "warning"
-            ]
-          },
-          "message": {
-            "type": "string"
-          },
-          "step_no": {
-            "type": [
-              "integer",
-              "null"
+              "generator",
+              "reviewer"
             ],
-            "minimum": 1
+            "title": "Agent Role"
           },
-          "rule_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "code",
-          "severity",
-          "message",
-          "step_no",
-          "rule_id"
-        ]
-      },
-      "ValidationReport": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": [
-              "passed",
-              "failed"
-            ]
-          },
-          "issues": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ValidationIssue"
-            }
-          },
-          "checked_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "rule_snapshot_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          }
-        },
-        "required": [
-          "status",
-          "issues",
-          "checked_at",
-          "rule_snapshot_id"
-        ]
-      },
-      "TaskVersion": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "task_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "version_no": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "parent_version_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "author_type": {
-            "type": "string",
-            "enum": [
-              "ai",
-              "human",
-              "ai_revision"
-            ]
-          },
-          "content": {
-            "$ref": "#/components/schemas/TaskContent"
-          },
-          "change_note": {
-            "type": "string"
-          },
-          "validation": {
-            "$ref": "#/components/schemas/ValidationReport"
-          },
-          "run_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "task_id",
-          "version_no",
-          "parent_version_id",
-          "author_type",
-          "content",
-          "change_note",
-          "validation",
-          "run_id",
-          "created_at"
-        ]
-      },
-      "ReviewIssue": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "severity": {
-            "type": "string",
-            "enum": [
-              "error",
-              "warning"
-            ]
-          },
-          "step_no": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 1
-          },
-          "rule_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "quote": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          },
-          "suggestion": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "severity",
-          "step_no",
-          "rule_id",
-          "quote",
-          "message",
-          "suggestion"
-        ]
-      },
-      "Review": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "task_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "task_version_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "reviewer_id": {
-            "type": "string",
-            "const": "reviewer-default"
-          },
-          "run_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "verdict": {
-            "type": "string",
-            "enum": [
-              "pass",
-              "needs_changes"
-            ]
-          },
-          "issues": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ReviewIssue"
-            }
-          },
-          "summary": {
-            "type": "string"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "task_id",
-          "task_version_id",
-          "reviewer_id",
-          "run_id",
-          "verdict",
-          "issues",
-          "summary",
-          "created_at"
-        ],
-        "description": "needs_changes 至少一个 issue，pass 无 error；步号不能超过所审版本步骤数。规则闸阻断时无此记录。"
-      },
-      "TaskSummary": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "batch_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "name": {
-            "type": "string"
-          },
-          "step_count": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "version_no": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "status": {
-            "$ref": "#/components/schemas/TaskStatus"
-          },
-          "revision": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "human_edited": {
-            "type": "boolean"
-          },
-          "busy_run_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "batch_id",
-          "name",
-          "step_count",
-          "version_no",
-          "status",
-          "revision",
-          "human_edited",
-          "busy_run_id",
-          "created_at",
-          "updated_at"
-        ]
-      },
-      "TaskDetail": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "summary": {
-            "$ref": "#/components/schemas/TaskSummary"
-          },
-          "current_version": {
-            "$ref": "#/components/schemas/TaskVersion"
-          },
-          "latest_review": {
+          "title": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Review"
+                "type": "string",
+                "maxLength": 100
               },
               {
                 "type": "null"
               }
-            ]
-          },
-          "last_error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ErrorInfo"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "can_decide": {
-            "type": "boolean"
-          },
-          "ai_review_matches_current_version": {
-            "type": "boolean"
+            ],
+            "title": "Title"
           }
         },
-        "required": [
-          "summary",
-          "current_version",
-          "latest_review",
-          "last_error",
-          "can_decide",
-          "ai_review_matches_current_version"
-        ]
-      },
-      "TaskPage": {
-        "type": "object",
         "additionalProperties": false,
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TaskSummary"
-            }
-          },
-          "total": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "page": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "page_size": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          },
-          "status_counts": {
-            "$ref": "#/components/schemas/TaskCounts"
-          }
-        },
+        "type": "object",
         "required": [
-          "items",
-          "total",
-          "page",
-          "page_size",
-          "status_counts"
+          "agent_role"
         ],
-        "description": "status_counts 包含 batch_id/q 过滤但忽略 status 与分页；total 包含所有过滤。"
+        "title": "ConversationCreate"
       },
-      "VersionList": {
-        "type": "object",
-        "additionalProperties": false,
+      "ConversationUpdate": {
         "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TaskVersion"
-            }
-          }
-        },
-        "required": [
-          "items"
-        ]
-      },
-      "ReviewList": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Review"
-            }
-          }
-        },
-        "required": [
-          "items"
-        ]
-      },
-      "SaveVersion": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "expected_revision": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "content": {
-            "$ref": "#/components/schemas/TaskContent"
-          },
-          "change_note": {
+          "title": {
             "type": "string",
-            "maxLength": 2000,
-            "default": ""
-          }
-        },
-        "required": [
-          "expected_revision",
-          "content"
-        ]
-      },
-      "VersionAction": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "expected_revision": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "version_id": {
-            "type": "string",
+            "maxLength": 100,
             "minLength": 1,
-            "maxLength": 128
+            "title": "Title"
           }
         },
-        "required": [
-          "expected_revision",
-          "version_id"
-        ]
-      },
-      "ReviseRequest": {
-        "type": "object",
         "additionalProperties": false,
-        "properties": {
-          "expected_revision": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "version_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "feedback": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 5000
-          }
-        },
+        "type": "object",
         "required": [
-          "expected_revision",
-          "version_id",
-          "feedback"
-        ]
+          "title"
+        ],
+        "title": "ConversationUpdate"
       },
       "DecisionRequest": {
-        "type": "object",
-        "additionalProperties": false,
         "properties": {
           "expected_revision": {
             "type": "integer",
-            "minimum": 1
+            "minimum": 1.0,
+            "title": "Expected Revision"
           },
           "version_id": {
             "type": "string",
+            "maxLength": 128,
             "minLength": 1,
-            "maxLength": 128
+            "title": "Version Id"
           },
           "decision": {
             "type": "string",
-            "enum": [
-              "approve",
-              "reject"
-            ]
+            "pattern": "^(approve|reject)$",
+            "title": "Decision"
           },
           "reason": {
             "type": "string",
             "maxLength": 5000,
+            "title": "Reason",
             "default": ""
           }
         },
+        "additionalProperties": false,
+        "type": "object",
         "required": [
           "expected_revision",
           "version_id",
           "decision"
         ],
-        "allOf": [
-          {
-            "if": {
-              "properties": {
-                "decision": {
-                  "const": "reject"
-                }
-              },
-              "required": [
-                "decision"
-              ]
-            },
-            "then": {
-              "required": [
-                "reason"
-              ],
-              "properties": {
-                "reason": {
-                  "type": "string",
-                  "minLength": 1,
-                  "pattern": "\\S"
-                }
-              }
-            }
-          }
-        ]
+        "title": "DecisionRequest"
       },
-      "HumanDecision": {
-        "type": "object",
+      "EmptyRequest": {
+        "properties": {},
         "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "task_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "task_version_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "decision": {
-            "type": "string",
-            "enum": [
-              "approve",
-              "reject"
-            ]
-          },
-          "reason": {
-            "type": "string"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "task_id",
-          "task_version_id",
-          "decision",
-          "reason",
-          "created_at"
-        ]
+        "type": "object",
+        "title": "EmptyRequest"
       },
-      "DecisionResult": {
-        "type": "object",
-        "additionalProperties": false,
+      "ExportRequest": {
         "properties": {
-          "decision": {
-            "$ref": "#/components/schemas/HumanDecision"
-          },
-          "task": {
-            "$ref": "#/components/schemas/TaskDetail"
-          }
-        },
-        "required": [
-          "decision",
-          "task"
-        ]
-      },
-      "RunProgress": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "total": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "completed": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "failed": {
-            "type": "integer",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "total",
-          "completed",
-          "failed"
-        ]
-      },
-      "Run": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
           "batch_id": {
             "type": "string",
+            "maxLength": 128,
             "minLength": 1,
-            "maxLength": 128
-          },
-          "task_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "title": "Batch Id"
           },
           "task_ids": {
-            "type": "array",
             "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            }
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Task Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "batch_id",
+          "task_ids"
+        ],
+        "title": "ExportRequest"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "MaterialIn": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name"
           },
-          "kind": {
+          "quantity": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Quantity"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "quantity"
+        ],
+        "title": "MaterialIn"
+      },
+      "MessageCreate": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "maxLength": 20000,
+            "title": "Content",
+            "default": ""
+          },
+          "attachment_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Attachment Ids"
+          },
+          "task_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Task Ids"
+          },
+          "pasted_text": {
+            "type": "string",
+            "maxLength": 80000,
+            "title": "Pasted Text",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "MessageCreate",
+        "description": "一条对话消息。generator 会话走生成；reviewer 会话走送审 / 粘贴 / 上传三种入口。"
+      },
+      "ReviseRequest": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          },
+          "version_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Version Id"
+          },
+          "feedback": {
+            "type": "string",
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Feedback"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "version_id",
+          "feedback"
+        ],
+        "title": "ReviseRequest"
+      },
+      "SaveVersion": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          },
+          "content": {
+            "$ref": "#/components/schemas/TaskContentIn"
+          },
+          "change_note": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Change Note",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "content"
+        ],
+        "title": "SaveVersion"
+      },
+      "SettingsUpdate": {
+        "properties": {
+          "api_format": {
             "type": "string",
             "enum": [
-              "generate_batch",
-              "review_task",
-              "revise_task"
-            ]
+              "openai",
+              "anthropic"
+            ],
+            "title": "Api Format",
+            "default": "openai"
           },
-          "stage": {
+          "base_url": {
             "type": "string",
-            "enum": [
-              "queued",
-              "generating",
-              "validating",
-              "reviewing",
-              "done"
-            ]
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Base Url"
           },
-          "status": {
+          "generation_model": {
             "type": "string",
-            "enum": [
-              "queued",
-              "running",
-              "succeeded",
-              "failed",
-              "interrupted"
-            ]
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Generation Model"
           },
-          "progress": {
-            "$ref": "#/components/schemas/RunProgress"
-          },
-          "error": {
+          "review_model": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ErrorInfo"
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
               },
               {
                 "type": "null"
               }
-            ]
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "started_at": {
-            "type": [
-              "string",
-              "null"
             ],
-            "format": "date-time"
+            "title": "Review Model"
           },
-          "finished_at": {
-            "type": [
-              "string",
-              "null"
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
             ],
-            "format": "date-time"
+            "title": "Api Key"
           }
         },
+        "additionalProperties": false,
+        "type": "object",
         "required": [
-          "id",
-          "batch_id",
-          "task_id",
-          "task_ids",
-          "kind",
-          "stage",
-          "status",
-          "progress",
-          "error",
-          "created_at",
-          "started_at",
-          "finished_at"
-        ]
+          "base_url",
+          "generation_model"
+        ],
+        "title": "SettingsUpdate"
       },
-      "EmptyRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {},
-        "required": []
-      },
-      "ExportRequest": {
-        "type": "object",
-        "additionalProperties": false,
+      "SubmitRequest": {
         "properties": {
-          "batch_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
           "task_ids": {
-            "type": "array",
             "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
+              "type": "string"
             },
-            "minItems": 1,
+            "type": "array",
             "maxItems": 100,
-            "uniqueItems": true
+            "minItems": 1,
+            "title": "Task Ids"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Note",
+            "default": ""
           }
         },
-        "required": [
-          "batch_id",
-          "task_ids"
-        ]
-      },
-      "ExportedVersion": {
-        "type": "object",
         "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "task_ids"
+        ],
+        "title": "SubmitRequest"
+      },
+      "TaskContentIn": {
         "properties": {
-          "task_id": {
+          "name": {
             "type": "string",
+            "maxLength": 200,
             "minLength": 1,
-            "maxLength": 128
+            "title": "Name"
+          },
+          "steps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Steps"
+          },
+          "materials": {
+            "items": {
+              "$ref": "#/components/schemas/MaterialIn"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Materials"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "steps",
+          "materials"
+        ],
+        "title": "TaskContentIn"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "VersionAction": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
           },
           "version_id": {
             "type": "string",
+            "maxLength": 128,
             "minLength": 1,
-            "maxLength": 128
+            "title": "Version Id"
           }
         },
+        "additionalProperties": false,
+        "type": "object",
         "required": [
-          "task_id",
+          "expected_revision",
           "version_id"
-        ]
-      },
-      "Export": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "batch_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "versions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ExportedVersion"
-            },
-            "minItems": 1
-          },
-          "filename": {
-            "type": "string"
-          },
-          "download_url": {
-            "type": "string",
-            "pattern": "^/api/v1/exports/[^/]+/download$"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "batch_id",
-          "versions",
-          "filename",
-          "download_url",
-          "created_at"
-        ]
-      },
-      "DecisionList": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "items"
         ],
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/HumanDecision"
-            }
-          }
-        }
-      }
-    },
-    "examples": {
-      "SettingsExample": {
-        "summary": "配置读取，不包含密钥",
-        "value": {
-          "api_format": "openai",
-          "base_url": "https://api.example.com/v1",
-          "generation_model": "configured-generation-model",
-          "review_model": "configured-review-model",
-          "api_key_set": false
-        }
-      },
-      "RunExample": {
-        "summary": "正在审核，已处理三条中的一条；仅展示结构",
-        "value": {
-          "id": "run_demo_01",
-          "batch_id": "batch_demo_01",
-          "task_id": null,
-          "task_ids": [
-            "task_demo_01",
-            "task_demo_02",
-            "task_demo_03"
-          ],
-          "kind": "generate_batch",
-          "stage": "reviewing",
-          "status": "running",
-          "progress": {
-            "total": 3,
-            "completed": 1,
-            "failed": 0
-          },
-          "error": null,
-          "created_at": "2026-10-28T10:00:00Z",
-          "started_at": "2026-10-28T10:00:01Z",
-          "finished_at": null
-        }
-      },
-      "RevisionConflict": {
-        "summary": "编辑冲突，保留输入后重新加载",
-        "value": {
-          "error": {
-            "code": "REVISION_CONFLICT",
-            "message": "任务已更新，请重新加载后合并修改",
-            "details": {
-              "expected_revision": 3,
-              "current_revision": 4
-            },
-            "request_id": "req_demo_01"
-          }
-        }
+        "title": "VersionAction"
       }
     }
   }

@@ -9,13 +9,15 @@ goal 和 human_feedback 是本次工作要求；reference_text、历史命中和
 check_tasks 返回 candidate_id，最终结构化提交只引用选定的 candidate_id，不重新抄写正文。
 系统从已检查的候选中取回完整正文。检查工具的 steps 是不带序号的短句数组，
 materials 是基础物料名称与正整数 quantity 的数组；编号与导出格式由后端处理。
-任务模式 {task_mode} 的步数范围为 {min_steps}～{max_steps}。
+本次步数要求：{step_rule}。
 不要执行源 Skill 的聊天交付、文件导出、追加历史或自动改写规则流程；这些由业务后端和人工负责。
 """
 
 GENERATOR_SYSTEM = """你是独立的 G2 任务生成 Agent，使用 g2-task-generator Skill。
 先确定活动、初态、终态和物料的实际用途，再形成动作链；按需检索历史和读取参考。
-生成批次时检查指定数量的 tasks，然后返回简洁具体的任务集 name 和 candidate_id。
+用户没有明确说条数时，条数由你决定：以上传的物料库能支撑几个互不重复的活动为准，
+不要为了凑数拆出同构任务，也不要把能分开的活动硬塞进一条。
+生成批次时检查你决定的全部 tasks，然后返回简洁具体的任务集 name 和 candidate_id。
 按反馈修改时只修改指定任务，检查仅含一条正文的 tasks，然后返回 name 与 candidate_id。
 提交前对整个最终批次调用 check_tasks，判断历史与批内重叠线索，不靠换名字避重。
 """
@@ -31,6 +33,6 @@ step_no 从 1 开始，无法定位则为 null；quote 必须来自该步骤，�
 """
 
 
-def role_prompt(role: str, task_mode: str, min_steps: int, max_steps: int) -> str:
-    common = COMMON.format(task_mode=task_mode, min_steps=min_steps, max_steps=max_steps)
+def role_prompt(role: str, step_rule: str) -> str:
+    common = COMMON.format(step_rule=step_rule)
     return common + (GENERATOR_SYSTEM if role == "generator" else REVIEWER_SYSTEM)

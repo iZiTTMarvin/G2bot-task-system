@@ -36,6 +36,7 @@ def create(
     task_mode: str,
     reference_text: str,
     attachment_ids: list[str],
+    conversation_id: str | None = None,
     finish=None,
 ) -> dict[str, Any]:
     name = (name or "").strip()
@@ -43,6 +44,9 @@ def create(
     reference_text = (reference_text or "").strip()
     if not goal:
         raise validation_error("要求不能为空", ["goal"])
+    if not name:
+        # 批次名取用户第一句话，短且稳定；不再等模型起名覆盖
+        name = " ".join(goal.split())[:24]
     if len(set(attachment_ids)) != len(attachment_ids):
         raise validation_error("附件列表存在重复", ["attachment_ids"])
 
@@ -63,8 +67,9 @@ def create(
         snapshot_id = _ensure_rule_snapshot(conn)
         conn.execute(
             "INSERT INTO batches (id, name, goal, task_count, task_mode, reference_text,"
-            " attachment_ids_json, attachments_text, rule_snapshot_id, created_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            " attachment_ids_json, attachments_text, rule_snapshot_id, created_at,"
+            " conversation_id)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (
                 batch_id,
                 name,
@@ -76,6 +81,7 @@ def create(
                 frozen,
                 snapshot_id,
                 now,
+                conversation_id,
             ),
         )
         row = conn.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()

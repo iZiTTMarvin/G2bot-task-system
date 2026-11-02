@@ -11,6 +11,8 @@ from ..errors import ApiError, not_found, run_busy, validation_error
 from ..services import (
     attachments as attachments_service,
     batches as batches_service,
+    chat as chat_service,
+    conversations as conversations_service,
     exports as exports_service,
     runs as runs_service,
     settings as settings_service,
@@ -19,12 +21,16 @@ from ..services import (
 from . import deps
 from .schemas import (
     BatchCreate,
+    ConversationCreate,
+    ConversationUpdate,
     DecisionRequest,
     EmptyRequest,
     ExportRequest,
+    MessageCreate,
     ReviseRequest,
     SaveVersion,
     SettingsUpdate,
+    SubmitRequest,
     VersionAction,
 )
 
@@ -35,7 +41,7 @@ router = APIRouter(prefix="/api/v1")
 def health() -> dict:
     conn = db.get_conn()
     conn.execute("SELECT 1").fetchone()
-    return {"status": "ok", "database": "ok", "contract_version": "0.1.0"}
+    return {"status": "ok", "database": "ok", "contract_version": "0.2.0"}
 
 
 @router.get("/settings", tags=["settings"])
@@ -231,6 +237,81 @@ def revise_task(task_id: str, request: Request, payload: ReviseRequest) -> Respo
     return deps.run_idempotent(
         f"POST /api/v1/tasks/{task_id}/revise", request, payload, runner
     )
+
+
+# ---------- 会话（两个 Agent 各一个对话框） ----------
+
+@router.post("/conversations", status_code=201, tags=["conversations"])
+def create_conversation(payload: ConversationCreate) -> dict:
+    return conversations_service.create(payload.agent_role, payload.title)
+
+
+@router.get("/conversations", tags=["conversations"])
+def list_conversations(
+    agent_role: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=100),
+) -> dict:
+    if agent_role is not None and agent_role not in {"generator", "reviewer"}:
+        raise validation_error(f"未知的 Agent 角色：{agent_role}", ["agent_role"])
+    return conversations_service.list_conversations(
+        agent_role=agent_role, page=page, page_size=page_size
+    )
+
+
+@router.get("/conversations/{conversation_id}", tags=["conversations"])
+def get_conversation(conversation_id: str) -> dict:
+    return conversations_service.get(conversation_id)
+
+
+@router.patch("/conversations/{conversation_id}", tags=["conversations"])
+def rename_conversation(conversation_id: str, payload: ConversationUpdate) -> dict:
+    return conversations_service.update_title(conversation_id, payload.title)
+
+
+@router.delete("/conversations/{conversation_id}", status_code=204, tags=["conversations"])
+def delete_conversation(conversation_id: str) -> Response:
+    conversations_service.delete(conversation_id)
+    return Response(status_code=204)
+
+
+@router.get("/conversations/{conversation_id}/messages", tags=["conversations"])
+def list_messages(conversation_id: str) -> dict:
+    return conversations_service.list_messages(conversation_id)
+
+
+@router.get("/conversations/{conversation_id}/tasks", tags=["conversations"])
+def conversation_tasks(conversation_id: str) -> dict:
+    return chat_service.tasks_for_conversation(conversation_id)
+
+
+@router.post("/conversations/{conversation_id}/messages", status_code=201, tags=["conversations"])
+def post_message(conversation_id: str, request: Request, payload: MessageCreate) -> Response:
+    def runner(finish: deps.FinishFn) -> tuple[int, dict]:
+        return chat_service.send(
+            conversation_id,
+            content=payload.content,
+            attachment_ids=payload.attachment_ids,
+            task_ids=payload.task_ids,
+            pasted_text=payload.pasted_text,
+            finish=finish,
+        )
+
+    return deps.run_idempotent(
+        f"POST /api/v1/conversations/{conversation_id}/messages", request, payload, runner
+    )
+
+
+@router.post("/tasks/submit", status_code=202, tags=["runs"])
+def submit_tasks(request: Request, payload: SubmitRequest) -> Response:
+    """批量送审：不经过会话也能用（任务列表勾选后直接送）。"""
+
+    def runner(finish: deps.FinishFn) -> tuple[int, dict]:
+        result = runs_service.start_review_batch(payload.task_ids, finish=finish)
+        runs_service.wake_worker()
+        return 202, result
+
+    return deps.run_idempotent("POST /api/v1/tasks/submit", request, payload, runner)
 
 
 @router.post("/exports", status_code=201, tags=["exports"])

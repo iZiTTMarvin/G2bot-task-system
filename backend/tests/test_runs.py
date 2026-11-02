@@ -480,13 +480,14 @@ def test_export_flow(client):
     )
     assert r2.status_code == 201 and r2.json()["id"] == body["id"]
 
-    # 混入未通过任务 → 整次失败
+    # 未通过的任务也能导出（导出表里带状态列区分）
     r3 = client.post(
         "/api/v1/exports",
         json={"batch_id": batch["id"], "task_ids": approved_ids + [tasks[2]["id"]]},
         headers={"Idempotency-Key": "ex-2"},
     )
-    assert r3.status_code == 409 and r3.json()["error"]["code"] == "INVALID_STATE"
+    assert r3.status_code == 201
+    assert len(r3.json()["versions"]) == 3
 
     # 下载并验证内容与顺序（按创建顺序）
     dl = client.get(body["download_url"])
@@ -501,7 +502,7 @@ def test_export_flow(client):
     wb = load_workbook(_io.BytesIO(dl.content))
     ws = wb.active
     rows = list(ws.iter_rows(values_only=True))
-    assert rows[0] == ("任务名字", "任务步骤", "单套所需物料")
+    assert rows[0] == ("任务名字", "任务步骤", "单套所需物料", "状态", "审核意见")
     assert len(rows) == 3
     assert rows[1][1].startswith("1.") and "\n2." in rows[1][1]
     assert all(isinstance(c, str) for row in rows for c in row)  # 全部文本单元格

@@ -22,8 +22,12 @@ from ..prompts_spec import TASK_STATUSES
 from ..tools import validation as rule_tools
 from . import render
 
-# 保存版本允许的状态：除 approved、ai_reviewing 之外（ai_reviewing 时必然被作业占用）
-SAVE_ALLOWED_STATUSES = set(TASK_STATUSES) - {"approved", "ai_reviewing"}
+# 保存版本允许的状态：只要没有作业占用就允许改（包括已通过的任务——
+# 改完会退回 human_pending 重新确认，不再像原来那样一旦通过就彻底锁死）
+SAVE_ALLOWED_STATUSES = set(TASK_STATUSES) - {"ai_reviewing"}
+
+# 人工可通过 / 驳回的状态
+DECIDE_ALLOWED_STATUSES = {"human_pending", "ai_rejected"}
 
 FinishFn = Callable[[sqlite3.Connection, int, Any], None]
 
@@ -219,6 +223,52 @@ def insert_version(
     return conn.execute("SELECT * FROM task_versions WHERE id=?", (version_id,)).fetchone()
 
 
+def create_adhoc_task(
+    conn: sqlite3.Connection,
+    *,
+    batch_id: str,
+    content: dict[str, Any],
+    snapshot_id: str,
+    task_mode: str,
+    author_type: str = "ai",
+    change_note: str = "导入待审任务",
+    run_id: str | None = None,
+) -> str:
+    """不经过生成模型直接落一条任务（审核 Agent 的"粘贴/上传"入口用）。
+
+    调用方必须在事务内执行；返回新任务 id。
+    """
+    seq = conn.execute(
+        "SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM tasks WHERE batch_id=?", (batch_id,)
+    ).fetchone()["n"]
+    task_id = ids.new_id("task")
+    version_id = ids.new_id("ver")
+    report = rule_tools.validate_content(content, task_mode, snapshot_id)
+    now = db.utcnow()
+    conn.execute(
+        "INSERT INTO task_versions (id, task_id, version_no, parent_version_id,"
+        " author_type, content_json, change_note, validation_json, run_id, created_at)"
+        " VALUES (?,?,1,NULL,?,?,?,?,?,?)",
+        (
+            version_id,
+            task_id,
+            author_type,
+            db_json(content),
+            change_note,
+            db_json(report),
+            run_id,
+            now,
+        ),
+    )
+    conn.execute(
+        "INSERT INTO tasks (id, batch_id, seq, name, step_count, current_version_id,"
+        " current_version_no, status, revision, busy_run_id, created_at, updated_at)"
+        " VALUES (?,?,?,?,?,?,1,'pending_review',1,NULL,?,?)",
+        (task_id, batch_id, seq, content["name"], len(content["steps"]), version_id, now, now),
+    )
+    return task_id
+
+
 def db_json(value: Any) -> str:
     import json as _json
 
@@ -260,6 +310,12 @@ def save_version(
             snapshot_id=batch["rule_snapshot_id"],
             task_mode=batch["task_mode"],
         )
+        # 改过的任务必须重新确认：已通过的退回待确认，被驳回的重新进入待确认
+        if task["status"] in {"approved", "rejected"}:
+            conn.execute(
+                "UPDATE tasks SET status='human_pending', updated_at=? WHERE id=?",
+                (db.utcnow(), task_id),
+            )
         fresh = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
         detail = render.render_task_detail(conn, fresh)
         if finish:
@@ -290,7 +346,7 @@ def decide(
     with db.tx() as conn:
         task = _get_task(conn, task_id)
         _check_free(task)
-        if task["status"] != "human_pending":
+        if task["status"] not in DECIDE_ALLOWED_STATUSES:
             raise invalid_state(f"当前状态 {task['status']} 不允许人工通过或驳回")
         _check_revision(task, expected_revision)
         if version_id != task["current_version_id"]:

@@ -16,7 +16,36 @@ from ..errors import ApiError, invalid_state, not_found
 from ..tools.validation import materials_to_text
 from . import render
 
-COLUMNS = ["任务名字", "任务步骤", "单套所需物料"]
+COLUMNS = ["任务名字", "任务步骤", "单套所需物料", "状态", "审核意见"]
+
+STATUS_TEXT = {
+    "pending_review": "待 AI 审核",
+    "ai_reviewing": "AI 审核中",
+    "human_pending": "待确认",
+    "ai_rejected": "需人工处理",
+    "review_failed": "审核失败",
+    "approved": "已确认",
+    "rejected": "已驳回",
+}
+
+
+def _review_cell(conn: Any, task_id: str) -> str:
+    row = conn.execute(
+        "SELECT verdict, summary, issues_json FROM reviews WHERE task_id=?"
+        " ORDER BY created_at DESC, id DESC LIMIT 1",
+        (task_id,),
+    ).fetchone()
+    if row is None:
+        return ""
+    parts = [f"AI审核：{'通过' if row['verdict'] == 'pass' else '有问题'}｜{row['summary']}"]
+    try:
+        issues = __import__("json").loads(row["issues_json"])
+    except ValueError:
+        issues = []
+    for issue in issues[:8]:
+        step = f"第{issue['step_no']}步 " if issue.get("step_no") else ""
+        parts.append(f"{step}{issue.get('message', '')}")
+    return "\n".join(parts)
 
 
 def _steps_cell(steps: list[str]) -> str:
@@ -51,12 +80,10 @@ def create_export(
     missing = [t for t in task_ids if t not in by_id]
     if missing:
         raise not_found(f"任务 {missing[0]}")
-    offenders = [
-        r["id"] for r in rows if r["batch_id"] != batch_id or r["status"] != "approved"
-    ]
+    offenders = [r["id"] for r in rows if r["batch_id"] != batch_id]
     if offenders:
         raise invalid_state(
-            "导出要求所有任务属于同一批次且已人工通过",
+            "导出要求所有任务属于同一批次",
             {"invalid_task_ids": offenders},
         )
 
@@ -80,6 +107,8 @@ def create_export(
             str(content["name"]),
             _steps_cell(content["steps"]),
             _materials_cell(content["materials"]),
+            STATUS_TEXT.get(task["status"], task["status"]),
+            _review_cell(db.get_conn(), task["id"]),
         ]
         ws.append(row_values)
         # openpyxl 会把 "=" 开头的字符串当公式（data_type='f'）；

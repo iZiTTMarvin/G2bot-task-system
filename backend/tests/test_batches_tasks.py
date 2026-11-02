@@ -7,13 +7,16 @@ from tests.conftest import generate, make_batch
 # ---------- 批次 ----------
 
 def test_batch_create_validation(client):
-    # 无名称、无资料也可创建，名称由模型生成
+    # 无名称、无资料也可创建；名称取用户第一句话，不再等模型起名
     r = client.post(
         "/api/v1/batches",
         json={"goal": "生成 3 条居家桌面任务"},
         headers={"Idempotency-Key": "k1"},
     )
-    assert r.status_code == 201 and r.json()["name"] is None
+    assert r.status_code == 201
+    assert r.json()["name"] == "生成 3 条居家桌面任务"
+    assert r.json()["task_mode"] == "auto"
+    assert r.json()["task_count"] == 0
 
     # 附件不存在
     r = client.post(
@@ -74,7 +77,7 @@ def test_batch_snapshot_frozen(client):
     assert r.json()["total"] == 1
 
 
-def test_generation_names_collection_and_tasks(client):
+def test_generation_keeps_user_named_batch(client):
     r = client.post(
         "/api/v1/batches",
         json={"goal": "生成 3 条居家桌面任务", "task_count": 3},
@@ -84,7 +87,8 @@ def test_generation_names_collection_and_tasks(client):
     run = generate(client, batch["id"])
     assert run["status"] == "succeeded"
     named = client.get(f"/api/v1/batches/{batch['id']}").json()
-    assert named["name"] == "居家桌面任务集"
+    # 批次名固定为用户第一句话，不再被模型返回的 name 覆盖
+    assert named["name"] == "生成 3 条居家桌面任务"
     tasks = client.get("/api/v1/tasks", params={"batch_id": batch["id"]}).json()["items"]
     assert len(tasks) == 3 and all(t["name"] for t in tasks)
 
@@ -251,9 +255,11 @@ def test_save_busy_and_after_approve(client):
     r = client.post(
         f"/api/v1/tasks/{tid}/versions",
         json={"expected_revision": d["summary"]["revision"], "content": _edit(d)},
-        headers={"Idempotency-Key": "sv-locked"},
+        headers={"Idempotency-Key": "sv-after-approve"},
     )
-    assert r.status_code == 409 and r.json()["error"]["code"] == "INVALID_STATE"
+    # 通过后仍可编辑，但要退回待确认状态（不再彻底锁死）
+    assert r.status_code == 201
+    assert r.json()["summary"]["status"] == "human_pending"
 
 
 def test_save_invalid_structure(client):

@@ -5,7 +5,7 @@ import json
 import sqlite3
 from typing import Any
 
-from ..prompts_spec import TASK_STATUSES
+from ..prompts_spec import STATUS_STAGE, TASK_STATUSES
 
 
 def _j(value: str | None, default: Any) -> Any:
@@ -82,6 +82,7 @@ def render_task_summary(row: sqlite3.Row) -> dict[str, Any]:
         "step_count": row["step_count"],
         "version_no": row["current_version_no"],
         "status": row["status"],
+        "stage": STATUS_STAGE.get(row["status"], "generating"),
         "revision": row["revision"],
         "human_edited": False,  # 由调用方根据当前版本作者覆写
         "busy_run_id": row["busy_run_id"],
@@ -167,7 +168,8 @@ def render_task_detail(conn: sqlite3.Connection, task_row: sqlite3.Row) -> dict[
         "current_version": render_version(version),
         "latest_review": latest_review,
         "last_error": _j(task_row["last_error_json"], None),
-        "can_decide": task_row["status"] == "human_pending" and task_row["busy_run_id"] is None,
+        "can_decide": task_row["status"] in {"human_pending", "ai_rejected"}
+        and task_row["busy_run_id"] is None,
         "ai_review_matches_current_version": bool(
             review and review["task_version_id"] == task_row["current_version_id"]
         ),
