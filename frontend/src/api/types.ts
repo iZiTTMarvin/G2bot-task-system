@@ -9,7 +9,10 @@ export type TaskStatus =
   | 'approved'
   | 'rejected';
 
-export type TaskMode = 'standard' | 'long';
+export type TaskMode = 'auto' | 'standard' | 'long';
+
+// 界面上只露四态：生成中 / 审核中 / 待确认 / 已确认（其余折叠进对应阶段）
+export type TaskStage = 'generating' | 'reviewing' | 'reviewed' | 'confirmed' | 'error';
 
 export interface ErrorInfo {
   code: string;
@@ -99,11 +102,15 @@ export interface TaskSummary {
   step_count: number;
   version_no: number;
   status: TaskStatus;
+  stage?: TaskStage;
   revision: number;
   human_edited: boolean;
   busy_run_id: string | null;
   created_at: string;
   updated_at: string;
+  review_verdict?: 'pass' | 'needs_changes' | null;
+  review_summary?: string | null;
+  issue_count?: number;
 }
 
 export interface TaskDetail {
@@ -199,12 +206,14 @@ export interface RunProgress {
   failed: number;
 }
 
+export type RunKind = 'generate_batch' | 'review_task' | 'revise_task' | 'review_batch';
+
 export interface Run {
   id: string;
   batch_id: string;
   task_id: string | null;
   task_ids: string[];
-  kind: 'generate_batch' | 'review_task' | 'revise_task';
+  kind: RunKind;
   stage: 'queued' | 'generating' | 'validating' | 'reviewing' | 'done';
   status: 'queued' | 'running' | 'succeeded' | 'failed' | 'interrupted';
   progress: RunProgress;
@@ -212,6 +221,47 @@ export interface Run {
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
+}
+
+export type AgentRole = 'generator' | 'reviewer';
+
+export interface Conversation {
+  id: string;
+  agent_role: AgentRole;
+  title: string;
+  message_count: number;
+  task_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConversationPage {
+  items: Conversation[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversation_id: string;
+  role: 'user' | 'agent';
+  content: string;
+  batch_id: string | null;
+  run_id: string | null;
+  attachments: string[];
+  task_ids: string[];
+  run: Run | null;
+  created_at: string;
+}
+
+export interface MessageList {
+  items: ChatMessage[];
+}
+
+export interface ConversationTasks {
+  items: TaskSummary[];
+  batch_ids: string[];
 }
 
 export interface Settings {
@@ -250,9 +300,33 @@ export const STATUS_ORDER: TaskStatus[] = [
 export const STATUS_LABEL: Record<TaskStatus, string> = {
   pending_review: '待 AI 审核',
   ai_reviewing: 'AI 审核中',
-  human_pending: '待人工审核',
+  human_pending: '待确认',
   ai_rejected: '需人工处理',
   review_failed: '审核失败',
-  approved: '已通过',
-  rejected: '人工驳回',
+  approved: '已确认',
+  rejected: '已驳回',
 };
+
+export const STAGE_ORDER: TaskStage[] = ['generating', 'reviewing', 'reviewed', 'confirmed', 'error'];
+
+export const STAGE_LABEL: Record<TaskStage, string> = {
+  generating: '生成中',
+  reviewing: '审核中',
+  reviewed: '待确认',
+  confirmed: '已确认',
+  error: '需处理',
+};
+
+const STATUS_TO_STAGE: Record<TaskStatus, TaskStage> = {
+  pending_review: 'generating',
+  ai_reviewing: 'reviewing',
+  human_pending: 'reviewed',
+  ai_rejected: 'reviewed',
+  review_failed: 'error',
+  approved: 'confirmed',
+  rejected: 'error',
+};
+
+export function stageOf(task: { status: TaskStatus; stage?: TaskStage }): TaskStage {
+  return task.stage ?? STATUS_TO_STAGE[task.status];
+}

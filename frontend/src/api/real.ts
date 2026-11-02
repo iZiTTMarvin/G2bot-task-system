@@ -1,14 +1,19 @@
 // 真实 API 客户端：只使用相对路径 /api/v1，开发时由 Vite 代理转发。
-import type { ApiClient, BatchCreateInput } from './client';
+import type { ApiClient } from './client';
 import { ApiError, throwFromResponse } from './errors';
 import type {
   Attachment,
   AttachmentPage,
   Batch,
   BatchPage,
+  Conversation,
+  ConversationPage,
+  ConversationTasks,
+  DecisionList,
   DecisionResult,
   ExportRecord,
   Health,
+  MessageList,
   ReviewList,
   Run,
   Settings,
@@ -62,12 +67,11 @@ export const realClient: ApiClient = {
     form.append('file', file);
     return request<Attachment>('POST', '/attachments', { form });
   },
-  listAttachments: (page = 1, pageSize = 20) =>
+  listAttachments: (page = 1, pageSize = 40) =>
     request<AttachmentPage>('GET', `/attachments?page=${page}&page_size=${pageSize}`),
   getAttachment: (id) => request<Attachment>('GET', `/attachments/${id}`),
 
-  createBatch: (input: BatchCreateInput, key) =>
-    request<Batch>('POST', '/batches', { json: input, key }),
+  createBatch: (input, key) => request<Batch>('POST', '/batches', { json: input, key }),
   listBatches: (page = 1, pageSize = 20) =>
     request<BatchPage>('GET', `/batches?page=${page}&page_size=${pageSize}`),
   getBatch: (id) => request<Batch>('GET', `/batches/${id}`),
@@ -75,6 +79,26 @@ export const realClient: ApiClient = {
     request<Run>('POST', `/batches/${batchId}/generate`, { json: {}, key }),
 
   getRun: (runId) => request<Run>('GET', `/runs/${runId}`),
+
+  createConversation: (agentRole, title) =>
+    request<Conversation>('POST', '/conversations', {
+      json: { agent_role: agentRole, title: title ?? null },
+    }),
+  listConversations: (agentRole) =>
+    request<ConversationPage>(
+      'GET',
+      `/conversations?page_size=100${agentRole ? `&agent_role=${agentRole}` : ''}`
+    ),
+  getConversation: (id) => request<Conversation>('GET', `/conversations/${id}`),
+  renameConversation: (id, title) =>
+    request<Conversation>('PATCH', `/conversations/${id}`, { json: { title } }),
+  deleteConversation: (id) => request<void>('DELETE', `/conversations/${id}`),
+  listMessages: (id) => request<MessageList>('GET', `/conversations/${id}/messages`),
+  conversationTasks: (id) => request<ConversationTasks>('GET', `/conversations/${id}/tasks`),
+  sendMessage: (id, input, key) =>
+    request('POST', `/conversations/${id}/messages`, { json: input, key }),
+  submitTasks: (taskIds, key) =>
+    request<Run>('POST', '/tasks/submit', { json: { task_ids: taskIds }, key }),
 
   listTasks: (params) => {
     const qs = new URLSearchParams();
@@ -90,8 +114,7 @@ export const realClient: ApiClient = {
   saveVersion: (taskId, payload, key) =>
     request<TaskDetail>('POST', `/tasks/${taskId}/versions`, { json: payload, key }),
   listReviews: (taskId) => request<ReviewList>('GET', `/tasks/${taskId}/reviews`),
-  listDecisions: (taskId) =>
-    request<import('./types').DecisionList>('GET', `/tasks/${taskId}/decisions`),
+  listDecisions: (taskId) => request<DecisionList>('GET', `/tasks/${taskId}/decisions`),
   decide: (taskId, payload, key) =>
     request<DecisionResult>('POST', `/tasks/${taskId}/decisions`, { json: payload, key }),
   reviewTask: (taskId, payload, key) =>
@@ -99,8 +122,7 @@ export const realClient: ApiClient = {
   reviseTask: (taskId, payload, key) =>
     request<Run>('POST', `/tasks/${taskId}/revise`, { json: payload, key }),
 
-  createExport: (payload, key) =>
-    request<ExportRecord>('POST', '/exports', { json: payload, key }),
+  createExport: (payload, key) => request<ExportRecord>('POST', '/exports', { json: payload, key }),
   downloadExport: async (url) => {
     let resp: Response;
     try {

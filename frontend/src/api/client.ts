@@ -1,4 +1,27 @@
 import { ApiError } from './errors';
+import type {
+  AgentRole,
+  Attachment,
+  AttachmentPage,
+  Batch,
+  BatchPage,
+  ChatMessage,
+  Conversation,
+  ConversationPage,
+  ConversationTasks,
+  DecisionList,
+  DecisionResult,
+  ExportRecord,
+  Health,
+  MessageList,
+  ReviewList,
+  Run,
+  Settings,
+  TaskContent,
+  TaskDetail,
+  TaskPage,
+  VersionList,
+} from './types';
 
 export interface BatchCreateInput {
   name?: string;
@@ -7,29 +30,54 @@ export interface BatchCreateInput {
   task_mode: string;
   reference_text: string;
   attachment_ids: string[];
+  conversation_id?: string;
+}
+
+export interface SendMessageInput {
+  content?: string;
+  attachment_ids?: string[];
+  task_ids?: string[];
+  pasted_text?: string;
+}
+
+export interface SendMessageResult {
+  message: ChatMessage;
+  run: Run;
+  conversation: Conversation;
+  task_ids?: string[];
 }
 
 export interface ApiClient {
-  getHealth(): Promise<{ status: string; database: string; contract_version: string }>;
-  getSettings(): Promise<import('./types').Settings>;
+  getHealth(): Promise<Health>;
+  getSettings(): Promise<Settings>;
   updateSettings(payload: {
     api_format?: 'openai' | 'anthropic';
     base_url: string;
     generation_model: string;
     review_model?: string;
     api_key?: string;
-  }): Promise<import('./types').Settings>;
+  }): Promise<Settings>;
 
-  uploadAttachment(file: File): Promise<import('./types').Attachment>;
-  listAttachments(page?: number, pageSize?: number): Promise<import('./types').AttachmentPage>;
-  getAttachment(id: string): Promise<import('./types').Attachment>;
+  uploadAttachment(file: File): Promise<Attachment>;
+  listAttachments(page?: number, pageSize?: number): Promise<AttachmentPage>;
+  getAttachment(id: string): Promise<Attachment>;
 
-  createBatch(input: BatchCreateInput, key: string): Promise<import('./types').Batch>;
-  listBatches(page?: number, pageSize?: number): Promise<import('./types').BatchPage>;
-  getBatch(id: string): Promise<import('./types').Batch>;
-  generateBatch(batchId: string, key: string): Promise<import('./types').Run>;
+  createBatch(input: BatchCreateInput, key: string): Promise<Batch>;
+  listBatches(page?: number, pageSize?: number): Promise<BatchPage>;
+  getBatch(id: string): Promise<Batch>;
+  generateBatch(batchId: string, key: string): Promise<Run>;
 
-  getRun(runId: string): Promise<import('./types').Run>;
+  getRun(runId: string): Promise<Run>;
+
+  createConversation(agentRole: AgentRole, title?: string): Promise<Conversation>;
+  listConversations(agentRole?: AgentRole): Promise<ConversationPage>;
+  getConversation(id: string): Promise<Conversation>;
+  renameConversation(id: string, title: string): Promise<Conversation>;
+  deleteConversation(id: string): Promise<void>;
+  listMessages(conversationId: string): Promise<MessageList>;
+  conversationTasks(conversationId: string): Promise<ConversationTasks>;
+  sendMessage(conversationId: string, input: SendMessageInput, key: string): Promise<SendMessageResult>;
+  submitTasks(taskIds: string[], key: string): Promise<Run>;
 
   listTasks(params: {
     batch_id?: string;
@@ -37,16 +85,16 @@ export interface ApiClient {
     q?: string;
     page?: number;
     page_size?: number;
-  }): Promise<import('./types').TaskPage>;
-  getTask(taskId: string): Promise<import('./types').TaskDetail>;
-  listVersions(taskId: string): Promise<import('./types').VersionList>;
+  }): Promise<TaskPage>;
+  getTask(taskId: string): Promise<TaskDetail>;
+  listVersions(taskId: string): Promise<VersionList>;
   saveVersion(
     taskId: string,
-    payload: { expected_revision: number; content: import('./types').TaskContent; change_note?: string },
+    payload: { expected_revision: number; content: TaskContent; change_note?: string },
     key: string
-  ): Promise<import('./types').TaskDetail>;
-  listReviews(taskId: string): Promise<import('./types').ReviewList>;
-  listDecisions(taskId: string): Promise<import('./types').DecisionList>;
+  ): Promise<TaskDetail>;
+  listReviews(taskId: string): Promise<ReviewList>;
+  listDecisions(taskId: string): Promise<DecisionList>;
   decide(
     taskId: string,
     payload: {
@@ -56,22 +104,22 @@ export interface ApiClient {
       reason?: string;
     },
     key: string
-  ): Promise<import('./types').DecisionResult>;
+  ): Promise<DecisionResult>;
   reviewTask(
     taskId: string,
     payload: { expected_revision: number; version_id: string },
     key: string
-  ): Promise<import('./types').Run>;
+  ): Promise<Run>;
   reviseTask(
     taskId: string,
     payload: { expected_revision: number; version_id: string; feedback: string },
     key: string
-  ): Promise<import('./types').Run>;
+  ): Promise<Run>;
 
   createExport(
     payload: { batch_id: string; task_ids: string[] },
     key: string
-  ): Promise<import('./types').ExportRecord>;
+  ): Promise<ExportRecord>;
   downloadExport(url: string): Promise<Blob>;
 }
 
