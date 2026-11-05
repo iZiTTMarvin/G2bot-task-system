@@ -1,36 +1,30 @@
 {
-  "source": "C:/Users/xuhaochen/.kiro/skills/g2-robot-task-designer-v2",
+  "source": "C:/Users/xuhaochen/.agents/skills/g2-robot-task-designer-v2",
   "files": {
-    "CHANGELOG.md": "8017d3f7b349198b0f684d7e674b458c956fd15e81810e450ae3523fbe210448",
-    "SKILL.md": "2da62fe872c2698a5ef6a18fb899af01a009297a37adb0e3896c3263f380ee08",
+    "SKILL.md": "3cf952b99c93f3b4852cdab4e213d5ba1fcad2102e136d60d40372046078d9a2",
     "assets/atomic_skills_catalog.csv": "389b37c986618f40c6e5dace6e842c94b2fcaaa533cc0979153055c7acc13d02",
-    "assets/delivered_tasks.txt": "bb20f9fa0619458eb4e37418f1c8f1d882e752bb6655838c6e773767aad23c9b",
-    "assets/existing_tasks_feishu.txt": "d2ab6cfa06ec11b4d199b6e8e34f15dbc49e563c68946459af6d6ced8351d442",
-    "assets/ledger_template.csv": "7920e1383038c4202592dcf12c1b628342be81e539a6fc0fea00fe08bdc1c344",
     "assets/material_inventory_template.csv": "1c6d4727fcae82e686124bc02a6ecc610dc4cc57e26645f1fe4d60ad15add2ef",
-    "assets/regression_cases.csv": "7fb075ed7670db2147e6a00b75bdcccc52b8d229d13aeb3a11a71d1a600f410b",
-    "references/01-capability.md": "1852423a260f8f7f7514e50b134d2aeec95c8605907d48c77d0d1e1830d91738",
-    "references/02-writing-and-review.md": "b79ae83aa2ef83e0d0e4986030a1081253ce9bcfa91c4b86020d550c322162b3",
-    "references/03-diversity.md": "ce9e2a249060ae528160358b57ff49e3eb463b4a2f891283e58296d5ecfb1e61",
-    "references/04-examples.md": "3b344a3a615fe6e87d8f61b33fcb1924e4818a652e5f41152231ddd14efd70eb",
-    "references/05-batch.md": "21c4d75e78ff5576279c4a6e6df97441aaaf52e5fcb9c5abda8306796a177c41",
-    "references/06-brief.md": "e84072cfb19cf3ca94fa8e2dbb42986dddf39ca5c023d5ba2fe9480da5d85231",
-    "references/06-learned-rules.md": "cbc70d8a81b7de3ce86d4e8d8e6d6e3e3b0f3cc042b03126104281310de24c6b",
-    "references/07-evolution.md": "0dccb3170a081f7a9b71954884056e6b99698e27b26c40cf5a89c1bcbbe4de94",
-    "scripts/build_ledger.py": "532e624f38823f3068c8ce338f5cb5ce746b18bb5b784466a6877737d208d1d9",
-    "scripts/check.py": "01fc8c6079471e2c5fe0400b95eb64338fbdb3244beaaca973b530f90af065bb",
-    "scripts/check_segment_overlap.py": "bdd0f2fd83253ca3638d390330e4b1b2e11f398927c2829853c91910797604af",
-    "scripts/export_xlsx.py": "54105ca4ed311ab32db7ceabf2560e346d1063d803411d64d56db7a886b4aa39",
+    "assets/regression_cases.csv": "952b9d896107f7a6dbeca2db7b679b508417e94abc9a85b92ca491d8813bab9b",
+    "references/01-capability.md": "cec3465aeddcff3a3b248140970046105e2ccbbfdd7fb4aac7696cbf0047f9d2",
+    "references/02-writing-and-review.md": "ea18a71168f16ffa9f6fc625291275b15b8052c7f668e422488adff2299d14e7",
+    "references/03-diversity.md": "266eb8c386924ce3c76d0451b181fbb4bb684a339bcacaf041dbfebc2673d026",
+    "references/04-examples.md": "95faef7643cde6f45a8db8ada0e1ad05dfb96f4a0f2fd5be745fca344b493ad1",
+    "references/05-batch.md": "24a25fa25021951da37afdc0e6a73e7452405a1b412a778d02b51aa27f9101f8",
+    "references/06-brief.md": "aa3a79365e91760bcd057e93a2fe6a437bd533545f49fdcb727106160bd2c478",
+    "references/06-learned-rules.md": "d0195ee57f21b64fb4dcbbaa39bc50479fbcf1fe9eff799af59602572c6deb84",
+    "references/07-evolution.md": "823f8830bcbdb0b83614917d186db0f768780e2852e586915016107b7625aca6",
+    "scripts/check.py": "372b4edbbc11b45c0473418a41b5a13a455a1dbd3e53754e76fc922f0bc7bc8b",
+    "scripts/check_segment_overlap.py": "e2f37847ab7b5a4b9750ef5e0803f0262d760c21e06bec54fc48798476ced2c8",
+    "scripts/export_xlsx.py": "f9fc4065fbf4668ff78488b84eee8ccf600cfe4b5f93e2ea9b18e5749d832081",
     "scripts/learn.py": "df0a1694878bee92ec69d8ac207d6454e79ad8ff8509bcba24c18faa9ec38ce7",
-    "scripts/lookup_history.py": "4277c13c95558abe34bd8219c3dffb2480ffa9b85fbbabf7299c788806deb254",
-    "scripts/materials.py": "bbcea1cd5a78062ffcc84cbc37f339aa7acda64d74b925e2c51b3f761ef63214",
-    "scripts/regression.py": "d83f23da0530ea0e6e34d49616c7ee62e6d217d77c2c2fede6706cda4160b71d",
+    "scripts/materials.py": "223b195c7127fcfc11418024dc72823ee4e3d7f9a9dd7344526f0488df083f05",
+    "scripts/regression.py": "203440fafa9a9b94ab714bf16d7ab69d2695aa231658d6c8dd866d5a1c53d92d",
     "scripts/segment_overlap_regression.py": "c6958e2218ad700ff4ceefb974789acc41c6ee70a9f798203e1356a1879077b3",
-    "scripts/validate_tasks.py": "a5d43500ae07794a46bdcbd57b1c380802fe6dfc6062fa27160f2e644360d6f5"
+    "scripts/validate_tasks.py": "98f73da4f217522b99f256fe03577ab1a5a4b5843b05fc069bbffb1b76e48825"
   },
   "agent_files": {
-    "generator/SKILL.md": "36c9e2df0631012a94246ab946f7392be4e767f5afa1e00f0ceb60a4350aee12",
-    "reviewer/SKILL.md": "8b0cac71cf9ab38c8f63bb53e2500907288d4a45abf877bbab1dfa33ca4b435d"
+    "generator/SKILL.md": "e576bcd71b85ff4e52962feaf3c04e1e7732cbafe0954b3b2415b2f0bd2fdbc2",
+    "reviewer/SKILL.md": "6da8ecb565b4c6d8726804c85044c8e7567022d9654cc7e78b8406b0ae08b812"
   },
-  "rule_snapshot_id": "rs_e7b88d722590e7fd"
+  "rule_snapshot_id": "rs_1b5a8d303fe3b4cd"
 }

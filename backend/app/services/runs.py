@@ -28,6 +28,7 @@ from ..errors import (
 from ..prompts_spec import GENERATOR_ID, REVIEWER_ID, TASK_STATUSES
 from ..tools import validation as rule_tools
 from . import batches as batches_service
+from . import batch_checks
 from . import render
 from . import tasks as tasks_service
 
@@ -354,13 +355,18 @@ def _review_flow(run_id: str, task_id: str, *, reference_text: str) -> int:
     _set_task_status(task_id, "ai_reviewing", bump_revision=False)
     client = get_client()
     try:
-        result = client.review_task(
-            content=json.loads(version["content_json"]),
-            task_mode=batch["task_mode"],
-            reference_text=reference_text + "\n\n用户目标：" + batch["goal"]
-            + "\n\n规则校验结果（请修复可解决的问题）：\n"
-            + json.dumps(report["issues"], ensure_ascii=False),
-        )
+        peers = [item["content"] for item in batch_checks.current_tasks(conn, task["batch_id"])
+                 if item["id"] != task_id]
+        review_reference = (reference_text + "\n\n用户目标：" + batch["goal"]
+                            + "\n\n规则校验结果（请修复可解决的问题）：\n"
+                            + json.dumps(report["issues"], ensure_ascii=False))
+        if peers:
+            review_reference += "\n\n同批其他当前任务（仅供比较）：\n" + json.dumps(peers, ensure_ascii=False)
+        with trace_run(run_id, batch["rule_snapshot_id"]):
+            result = client.review_task(
+                content=json.loads(version["content_json"]),
+                task_mode=batch["task_mode"], reference_text=review_reference,
+            )
         optimized = result.get("optimized_task")
         if optimized is not None:
             try:
@@ -445,6 +451,41 @@ def _review_flow(run_id: str, task_id: str, *, reference_text: str) -> int:
             "UPDATE runs SET progress_completed=progress_completed+1 WHERE id=?", (run_id,)
         )
     return 0
+
+
+def _finalize_batch_checks(run_id: str, task_ids: list[str]) -> None:
+    """审核结束后按所有当前版本重新比较；相似只提醒，字面全同阻断。"""
+    conn = db.get_conn()
+    grouped: dict[str, list[str]] = {}
+    for task_id in task_ids:
+        task = conn.execute("SELECT batch_id FROM tasks WHERE id=?", (task_id,)).fetchone()
+        if task:
+            grouped.setdefault(task["batch_id"], []).append(task_id)
+    for batch_id, selected in grouped.items():
+        findings = batch_checks.current_issues(conn, batch_id)
+        with db.tx() as c:
+            for task_id in selected:
+                review = c.execute(
+                    "SELECT r.* FROM reviews r JOIN tasks t ON t.id=r.task_id"
+                    " WHERE r.task_id=? AND r.run_id=? AND r.task_version_id=t.current_version_id"
+                    " ORDER BY r.created_at DESC, r.id DESC LIMIT 1", (task_id, run_id),
+                ).fetchone()
+                if review is None:
+                    continue
+                issues = json.loads(review["issues_json"])
+                for finding in findings.get(task_id, []):
+                    issues.append({
+                        "severity": finding["severity"], "step_no": None,
+                        "rule_id": "SYSTEM_" + finding["code"], "quote": "", "message": finding["message"],
+                        "suggestion": "请结合实际物品、用途及初终态复核同批任务。",
+                    })
+                blocked = any(item["severity"] == "error" for item in findings.get(task_id, []))
+                verdict = "needs_changes" if blocked else review["verdict"]
+                c.execute("UPDATE reviews SET verdict=?, issues_json=? WHERE id=?",
+                          (verdict, json.dumps(issues, ensure_ascii=False), review["id"]))
+                if blocked:
+                    c.execute("UPDATE tasks SET status='ai_rejected', updated_at=? WHERE id=?",
+                              (db.utcnow(), task_id))
 
 
 def _release_tasks(task_ids: list[str]) -> None:
@@ -553,6 +594,7 @@ def _execute_generate_batch(run_id: str) -> None:
     for task_id in task_ids:
         failed += _review_flow(run_id, task_id, reference_text=reference)
 
+    _finalize_batch_checks(run_id, task_ids)
     _release_tasks(task_ids)
     _finish_run(run_id, failed=failed, stage="done" if failed == 0 else "reviewing")
     _post_generate_message(run_id, task_ids, collection_name, failed=failed)
@@ -657,6 +699,7 @@ def _execute_task_run(run_id: str) -> None:
         _update_run(run_id, stage="reviewing")
 
     failed = _review_flow(run_id, task_id, reference_text=reference)
+    _finalize_batch_checks(run_id, [task_id])
     _release_tasks([task_id])
     _finish_run(run_id, failed=failed, stage="done" if failed == 0 else "reviewing")
 
@@ -683,6 +726,7 @@ def _execute_review_batch(run_id: str) -> None:
                 exc.code, exc.message, exc.details, ref=run_id
             ))
             failed += 1
+    _finalize_batch_checks(run_id, task_ids)
     _release_tasks(task_ids)
     _finish_run(run_id, failed=failed, stage="done" if failed == 0 else "reviewing")
     _post_review_message(run_id, task_ids, failed=failed)

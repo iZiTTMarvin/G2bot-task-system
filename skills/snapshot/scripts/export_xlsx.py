@@ -52,7 +52,13 @@ def export(rows, out_path):
     ws.column_dimensions["B"].width = 58
     ws.column_dimensions["C"].width = 36
     ws.freeze_panes = "A2"
-    wb.save(out_path)
+    try:
+        wb.save(out_path)
+    except PermissionError:
+        p = Path(out_path)
+        alt = p.with_name(f"{p.stem}_新{p.suffix}")
+        wb.save(alt)
+        print(f"[提示] 原文件被占用，已另存为 → {alt}")
 
 
 def main():

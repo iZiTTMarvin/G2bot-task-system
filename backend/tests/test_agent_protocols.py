@@ -99,7 +99,6 @@ def test_sdk_deep_agent_completes_tool_roundtrip(monkeypatch, tmp_path, protocol
     task = _content(1, "", "standard")
     payload = {"name": "协议测试任务集", "tasks": [task]}
     sequence = [
-        ("search_history", {"keywords": ["收纳"]}, 1),
         ("check_tasks", {"tasks": [task]}, 2),
         ("GeneratedBatch", {"name": payload["name"], "candidate_id": task_digest([task])}, 3),
     ]
@@ -109,10 +108,10 @@ def test_sdk_deep_agent_completes_tool_roundtrip(monkeypatch, tmp_path, protocol
         assert DeepAgentClient().generate_batch(
             goal="生成一条任务", task_count=1, task_mode="standard", reference_text="",
         ) == payload
-    assert len(received) == 3
+    assert len(received) == 2
     # 第二轮真实 HTTP 请求携带第一轮工具结果，不能退化成一次文本请求。
     assert "tool" in json.dumps(received[1][1])
-    assert "delivered" in json.dumps(received[1][1])
+    assert "batch_comparisons" in json.dumps(received[1][1])
     trace = "\n".join(p.read_text(encoding="utf-8") for p in tmp_path.glob("agent-traces/**/*.jsonl"))
     assert "test-secret" not in trace
     assert "skill_loaded" in trace and "completed" in trace
@@ -143,10 +142,8 @@ def test_api_job_uses_both_deep_agents_and_keeps_human_approval(client, monkeypa
     task = _content(1, "", "standard")
     candidate_id = task_digest([task])
     sequence = [
-        ("search_history", {"keywords": ["收纳"]}, 1),
         ("check_tasks", {"tasks": [task]}, 2),
         ("GeneratedBatch", {"name": "SDK任务集", "candidate_id": candidate_id}, 3),
-        ("search_history", {"keywords": ["收纳"]}, 4),
         ("check_tasks", {"tasks": [task]}, 5),
         ("ReviewedTask", {"verdict": "pass", "issues": [], "summary": "独立审查完成",
                           "candidate_id": candidate_id}, 6),
@@ -160,7 +157,7 @@ def test_api_job_uses_both_deep_agents_and_keeps_human_approval(client, monkeypa
         batch = make_batch(client, count=1, mode="standard")
         run = generate(client, batch["id"])
     assert run["status"] == "succeeded"
-    assert len(received) == 6
+    assert len(received) == 4
     summary = client.get("/api/v1/tasks").json()["items"][0]
     assert summary["status"] == "human_pending"
     detail = client.get(f"/api/v1/tasks/{summary['id']}").json()

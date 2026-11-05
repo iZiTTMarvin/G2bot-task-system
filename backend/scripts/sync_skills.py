@@ -7,12 +7,27 @@ import json
 import re
 import shutil
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 REPO = Path(__file__).resolve().parents[2]
+HISTORY_ASSETS = frozenset({"assets/delivered_tasks.txt", "assets/existing_tasks_feishu.txt"})
 
 
 def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def verify_snapshot(rules: Path, roles: Path, manifest: dict) -> None:
+    manifest_file = rules / "MANIFEST.json"
+    if not manifest_file.is_file() or json.loads(manifest_file.read_text(encoding="utf-8")) != manifest:
+        raise ValueError("旧规则快照清单不一致，无法安全归档")
+    for directory, entries in ((rules, manifest["files"]), (roles, manifest.get("agent_files", {}))):
+        for relative, expected in entries.items():
+            if directory == rules and relative in HISTORY_ASSETS:
+                continue
+            target = (directory / relative).resolve()
+            if not target.is_relative_to(directory.resolve()) or not target.is_file() or digest(target) != expected:
+                raise ValueError("旧规则快照不完整或已被修改，无法安全归档")
 
 
 def sync(source: Path) -> str:
@@ -26,12 +41,27 @@ def sync(source: Path) -> str:
         if not re.fullmatch(r"rs_[0-9a-f]{16}", old["rule_snapshot_id"]):
             raise ValueError("旧清单编号无效")
         archive = REPO / "data/rule-snapshots" / old["rule_snapshot_id"]
-        if not archive.exists():
-            shutil.copytree(target, archive / "rules", ignore=shutil.ignore_patterns("__pycache__"))
-            for role in ("generator", "reviewer"):
-                role_dir = REPO / "skills" / role
-                if role_dir.exists():
-                    shutil.copytree(role_dir, archive / role)
+        if archive.exists():
+            verify_snapshot(archive / "rules", archive, old)
+        else:
+            verify_snapshot(target, REPO / "skills", old)
+            archive.parent.mkdir(parents=True, exist_ok=True)
+            with TemporaryDirectory(prefix=old["rule_snapshot_id"] + "-", dir=archive.parent) as temporary:
+                staging = Path(temporary)
+                rules = staging / "rules"
+                rules.mkdir()
+                shutil.copyfile(manifest_file, rules / "MANIFEST.json")
+                for relative in old["files"]:
+                    if relative in HISTORY_ASSETS:
+                        continue
+                    dest = rules / relative
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(target / relative, dest)
+                for role in ("generator", "reviewer"):
+                    role_dir = REPO / "skills" / role
+                    if role_dir.exists():
+                        shutil.copytree(role_dir, staging / role)
+                staging.rename(archive)
     incoming = {
         p.relative_to(source).as_posix(): p
         for p in source.rglob("*")
@@ -44,12 +74,12 @@ def sync(source: Path) -> str:
         dest = target / relative
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(origin, dest)
-    # 仅删除旧清单管理、且新版已移除的规则文件。
+    # 旧版资产可能包含现场数据，保留原文件但不再纳入新版清单。
     for relative in (old or {}).get("files", {}):
         dest = (target / relative).resolve()
         if not dest.is_relative_to(target):
             raise ValueError("清单文件越界")
-        if relative not in incoming and dest.is_file():
+        if relative not in incoming and not relative.startswith("assets/") and dest.is_file():
             dest.unlink()
     files = {name: digest(target / name) for name in sorted(incoming)}
     agent_files = {

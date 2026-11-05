@@ -105,6 +105,7 @@ export interface TaskSummary {
   stage?: TaskStage;
   revision: number;
   human_edited: boolean;
+  batch_comparison?: 'similar' | 'duplicate' | null;
   busy_run_id: string | null;
   created_at: string;
   updated_at: string;
@@ -117,6 +118,7 @@ export interface TaskDetail {
   summary: TaskSummary;
   current_version: TaskVersion;
   latest_review: Review | null;
+  batch_issues: ValidationIssue[];
   last_error: ErrorInfo | null;
   can_decide: boolean;
   ai_review_matches_current_version: boolean;

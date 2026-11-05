@@ -20,6 +20,7 @@ from ..errors import (
 )
 from ..prompts_spec import TASK_STATUSES
 from ..tools import validation as rule_tools
+from . import batch_checks
 from . import render
 
 # 保存版本允许的状态：只要没有作业占用就允许改（包括已通过的任务——
@@ -86,8 +87,11 @@ def list_tasks(
     ).fetchall()
     counts = render._task_counts(conn, batch_id=batch_id, name_like=name_like)
     items = []
+    batch_findings = {}
     for row in rows:
-        summary = render.render_task_summary(row)
+        if row["batch_id"] not in batch_findings:
+            batch_findings[row["batch_id"]] = batch_checks.current_issues(conn, row["batch_id"])
+        summary = render.render_task_summary(row, batch_findings[row["batch_id"]].get(row["id"], []))
         version = conn.execute(
             "SELECT author_type FROM task_versions WHERE id=?", (row["current_version_id"],)
         ).fetchone()
@@ -149,8 +153,6 @@ def normalize_content(content: dict[str, Any]) -> dict[str, Any]:
         raise validation_error("任务名最长 200 字符", ["content.name"])
     if not isinstance(steps, list) or not steps:
         raise validation_error("steps 至少 1 条", ["content.steps"])
-    if len(steps) > 100:
-        raise validation_error("steps 最多 100 条", ["content.steps"])
     norm_steps: list[str] = []
     for s in steps:
         if not isinstance(s, str) or not s.strip():
@@ -364,6 +366,10 @@ def decide(
             status = _json_loads(report["validation_json"])["status"]
             if status != "passed":
                 raise rule_gate_failed()
+            findings = batch_checks.current_issues(conn, task["batch_id"]).get(task_id, [])
+            duplicate = next((item for item in findings if item["severity"] == "error"), None)
+            if duplicate:
+                raise ApiError(422, "RULE_GATE_FAILED", duplicate["message"] + "，请先调整任务。")
         now = db.utcnow()
         decision_id = ids.new_id("dec")
         conn.execute(

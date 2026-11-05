@@ -139,6 +139,9 @@ export default function TaskDetailDrawer({ api, taskId, onClose, onChanged }: Pr
   const busy = Boolean(detail?.summary.busy_run_id);
   const content = detail?.current_version.content;
   const reviewData = detail?.latest_review;
+  const reviewIssues = reviewData?.issues.filter(
+    (issue) => !issue.rule_id?.startsWith('SYSTEM_BATCH_')
+  ) ?? [];
 
   return (
     <Drawer
@@ -201,9 +204,9 @@ export default function TaskDetailDrawer({ api, taskId, onClose, onChanged }: Pr
                   </span>
                 </div>
                 <div className="review-summary">{reviewData.summary}</div>
-                {reviewData.issues.length > 0 && (
+                {reviewIssues.length > 0 && (
                   <ul className="issue-list">
-                    {reviewData.issues.map((issue, index) => (
+                    {reviewIssues.map((issue, index) => (
                       <li key={index} className={`issue issue-${issue.severity}`}>
                         <div className="issue-head">
                           {issue.step_no ? `第 ${issue.step_no} 步` : '整体'}
@@ -341,6 +344,20 @@ export default function TaskDetailDrawer({ api, taskId, onClose, onChanged }: Pr
                 </div>
               )}
             </section>
+
+            {detail.batch_issues.length > 0 && (
+              <section className="detail-section">
+                <div className="detail-title">同批对比</div>
+                {detail.batch_issues.map((issue, index) => (
+                  <Alert
+                    key={index}
+                    className="rule-issue"
+                    type={issue.severity === 'error' ? 'error' : 'warning'}
+                    message={issue.message}
+                  />
+                ))}
+              </section>
+            )}
 
             {detail.current_version.validation.issues.length > 0 && (
               <section className="detail-section">

@@ -6,6 +6,7 @@ import sqlite3
 from typing import Any
 
 from ..prompts_spec import STATUS_STAGE, TASK_STATUSES
+from . import batch_checks
 
 
 def _j(value: str | None, default: Any) -> Any:
@@ -73,7 +74,8 @@ def render_batch(conn: sqlite3.Row | sqlite3.Connection, row: sqlite3.Row) -> di
     }
 
 
-def render_task_summary(row: sqlite3.Row) -> dict[str, Any]:
+def render_task_summary(row: sqlite3.Row, batch_findings: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    findings = batch_findings or []
     return {
         "id": row["id"],
         "batch_id": row["batch_id"],
@@ -85,6 +87,8 @@ def render_task_summary(row: sqlite3.Row) -> dict[str, Any]:
         "stage": STATUS_STAGE.get(row["status"], "generating"),
         "revision": row["revision"],
         "human_edited": False,  # 由调用方根据当前版本作者覆写
+        "batch_comparison": ("duplicate" if any(i["severity"] == "error" for i in findings)
+                             else "similar" if findings else None),
         "busy_run_id": row["busy_run_id"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
@@ -160,13 +164,15 @@ def render_task_detail(conn: sqlite3.Connection, task_row: sqlite3.Row) -> dict[
         "SELECT * FROM reviews WHERE task_id=? ORDER BY created_at DESC, id DESC LIMIT 1",
         (task_row["id"],),
     ).fetchone()
-    summary = render_task_summary(task_row)
+    findings = batch_checks.current_issues(conn, task_row["batch_id"]).get(task_row["id"], [])
+    summary = render_task_summary(task_row, findings)
     summary["human_edited"] = version is not None and version["author_type"] == "human"
     latest_review = render_review(review) if review else None
     return {
         "summary": summary,
         "current_version": render_version(version),
         "latest_review": latest_review,
+        "batch_issues": findings,
         "last_error": _j(task_row["last_error_json"], None),
         "can_decide": task_row["status"] in {"human_pending", "ai_rejected"}
         and task_row["busy_run_id"] is None,

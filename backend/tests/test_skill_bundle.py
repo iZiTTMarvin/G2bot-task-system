@@ -36,8 +36,8 @@ def test_upstream_manifest_is_complete_and_runtime_only_exposes_role(tmp_path, m
     monkeypatch.setattr(CONFIG, "data_dir", tmp_path)
     bundle = freeze_bundle()
     manifest = bundle.manifest
-    assert "/.kiro/skills/g2-robot-task-designer-v2" in manifest["source"]
-    for name in ["scripts/check.py", "scripts/regression.py", "assets/delivered_tasks.txt",
+    assert "/.agents/skills/g2-robot-task-designer-v2" in manifest["source"]
+    for name in ["scripts/check.py", "scripts/regression.py", "assets/atomic_skills_catalog.csv",
                  "references/01-capability.md", "references/06-brief.md"]:
         assert name in manifest["files"]
     files = bundle.agent_files("reviewer")
@@ -45,8 +45,11 @@ def test_upstream_manifest_is_complete_and_runtime_only_exposes_role(tmp_path, m
     assert "/skills/g2-task-generator/SKILL.md" not in files
     assert "交付格式" not in files["/rules/SKILL.md"]
     assert "## 执行流程" not in files["/rules/SKILL.md"]
-    assert "/rules/assets/delivered_tasks.txt" in files
-    assert "/rules/scripts/check.py" in files
+    assert "/rules/assets/delivered_tasks.txt" not in files
+    assert "/rules/references/03-diversity.md" in files
+    assert "L-037" in files["/rules/SKILL.md"]
+    assert not (bundle.root / "assets/delivered_tasks.txt").exists()
+    assert not (bundle.root / "assets/existing_tasks_feishu.txt").exists()
 
 
 def test_unknown_snapshot_does_not_fall_back_to_current_rules():

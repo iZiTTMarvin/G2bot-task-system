@@ -17,6 +17,12 @@ interface Props {
 }
 
 function badge(task: TaskSummary) {
+  if (task.batch_comparison === 'duplicate') {
+    return <span className="row-badge is-warn">步骤重复</span>;
+  }
+  if (task.batch_comparison === 'similar') {
+    return <span className="row-badge is-warn">相似待留意</span>;
+  }
   if (task.issue_count && task.issue_count > 0) {
     return <span className="row-badge is-warn">留 {task.issue_count} 条意见</span>;
   }

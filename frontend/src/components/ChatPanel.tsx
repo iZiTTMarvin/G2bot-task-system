@@ -103,7 +103,7 @@ export default function ChatPanel({
         <div>
           <div className="chat-title">{conversation?.title ?? '新会话'}</div>
           <div className="chat-sub">
-            {ROLE_NAME[role]} · 每次回复对应一次真实作业，历史会作为下文
+            {ROLE_NAME[role]} · 每次回复对应一次作业，当前会话的对话会作为下文
           </div>
         </div>
         <div className="chat-count">{messages.length} 条消息</div>
@@ -114,7 +114,7 @@ export default function ChatPanel({
         {conversation && messages.length === 0 && (
           <div className="chat-hint">
             {role === 'generator'
-              ? '左边上传物料库，这里说要做什么，Agent 会按 Skill 出任务。'
+              ? '说说想做什么，也可以上传物料库或附件。'
               : '选右侧任务送审，或粘贴一段任务文本让它按 Skill 改。'}
           </div>
         )}

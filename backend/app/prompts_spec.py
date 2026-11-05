@@ -1,21 +1,17 @@
-"""任务模式规格：与 skills 快照中 validate_tasks 的步数语义一致。
-
-auto：10~30 步，由 Agent 按活动复杂度自定（默认模式，界面不再让用户选）。
-standard：10~20 步（推荐 12~16）；long：20~30 步。
-"""
+"""任务模式规格；自动模式由 Agent 结合用户要求区分常规与长任务。"""
 from __future__ import annotations
 
-STEP_RANGES: dict[str, tuple[int, int]] = {
-    "auto": (10, 30),
+STEP_RANGES: dict[str, tuple[int, int | None]] = {
+    "auto": (1, None),
     "standard": (10, 20),
-    "long": (20, 30),
+    "long": (1, None),
 }
 
 # 模型可用步数区间（写进系统提示，auto 模式下让 Agent 自己定档）
 STEP_GUIDE: dict[str, str] = {
-    "auto": "10～30 步：按活动的实际复杂度自定，简单动作链不要凑步数，复杂活动不要压缩",
+    "auto": "依用户要求区分常规与长任务：常规 10～20 步；长任务优先 30 步以上，不设默认上限，时长须实测",
     "standard": "10～20 步",
-    "long": "20～30 步",
+    "long": "以现场遥操作 8 分钟以上为工作量目标，优先 30 步以上，不设默认步数上下限，时长须实测",
 }
 
 GENERATOR_ID = "generator-default"

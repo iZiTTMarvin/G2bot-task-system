@@ -234,10 +234,14 @@ def tasks_for_conversation(conversation_id: str) -> dict[str, Any]:
         params,
     ).fetchall()
     from . import render as render_service
+    from . import batch_checks
 
     items = []
+    batch_findings = {}
     for row in rows:
-        detail = render_service.render_task_summary(row)
+        if row["batch_id"] not in batch_findings:
+            batch_findings[row["batch_id"]] = batch_checks.current_issues(conn, row["batch_id"])
+        detail = render_service.render_task_summary(row, batch_findings[row["batch_id"]].get(row["id"], []))
         version = conn.execute(
             "SELECT author_type FROM task_versions WHERE id=?", (row["current_version_id"],)
         ).fetchone()
@@ -249,8 +253,14 @@ def tasks_for_conversation(conversation_id: str) -> dict[str, Any]:
         ).fetchone()
         detail["review_verdict"] = review["verdict"] if review else None
         detail["review_summary"] = review["summary"] if review else None
-        detail["issue_count"] = (
-            len(__import__("json").loads(review["issues_json"])) if review else 0
-        )
+        issues = __import__("json").loads(review["issues_json"]) if review else []
+        detail["issue_count"] = len(issues)
+        if not detail["batch_comparison"] and any(
+            issue.get("severity") == "warning" and
+            not (issue.get("rule_id") or "").startswith("SYSTEM_BATCH_") and
+            (issue.get("rule_id") == "BATCH_SIMILARITY" or "相似" in issue.get("message", ""))
+            for issue in issues
+        ):
+            detail["batch_comparison"] = "similar"
         items.append(detail)
     return {"items": items, "batch_ids": batch_ids}

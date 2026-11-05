@@ -3,11 +3,11 @@ import json
 
 import pytest
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import Field
 
-from app.agents.deep_agent import DeepAgentClient
+from app.agents.deep_agent import DeepAgentClient, TraceCallback
 from app.agents.fake import _content
 from app.agents.tools import task_digest
 from app.config import CONFIG
@@ -60,12 +60,23 @@ def traces(tmp_path):
             for line in file.read_text(encoding="utf-8").splitlines()]
 
 
+def test_core_rule_trace_requires_actual_content_not_just_its_path():
+    class Trace:
+        def write(self, *args, **kwargs):
+            pass
+
+    callback = TraceCallback(Trace(), "本次规则正文的唯一内容")
+    callback.on_chat_model_start({}, [[SystemMessage(content="规则来自 /rules/SKILL.md")]])
+    assert callback.memory_loaded is False
+    callback.on_chat_model_start({}, [[SystemMessage(content="本次规则正文的唯一内容")]])
+    assert callback.memory_loaded is True
+
+
 def test_real_graph_loads_skill_checks_then_revises(monkeypatch, tmp_path):
     good = _content(1, "", "standard")
     bad = {**good, "steps": good["steps"][:1]}
     payload = {"name": "收纳任务集", "tasks": [good]}
     model = install(monkeypatch, tmp_path, [
-        call("search_history", {"keywords": ["整理", "收纳"]}, 1),
         call("derive_materials", {"steps": good["steps"]}, 2),
         call("check_tasks", {"tasks": [bad]}, 3),
         call("check_tasks", {"tasks": [good]}, 4),
@@ -82,10 +93,48 @@ def test_real_graph_loads_skill_checks_then_revises(monkeypatch, tmp_path):
     messages = model.seen[-1]
     assert any(isinstance(m, ToolMessage) and m.name == "check_tasks" for m in messages)
     system = str(messages[0].content)
-    assert "L-034" in system and "平行" in system and "终态" in system
+    assert "L-037" in system and "平行" in system and "终态" in system
     for tools in model.offered_tools:
         assert {"task", "execute", "write_file", "edit_file", "delete"}.isdisjoint(tools)
         assert {"check_tasks", "read_file", "write_todos"} <= tools
+
+
+def test_generation_without_material_catalog_does_not_read_history(monkeypatch, tmp_path):
+    from app.tools.skill_bundle import load_bundle
+
+    task = _content(1, "", "standard")
+    bundle = load_bundle()
+    load_module = bundle.module
+
+    def no_history(name):
+        if name == "lookup_history":
+            raise AssertionError("生成不得读取历史任务")
+        return load_module(name)
+
+    monkeypatch.setattr(bundle, "module", no_history)
+    monkeypatch.setattr("app.agents.deep_agent.load_bundle", lambda _snapshot: bundle)
+    model = install(monkeypatch, tmp_path, [
+        call("check_tasks", {"tasks": [task]}, 1),
+        call("GeneratedBatch", {"name": "任务集", "tasks": [task]}, 2),
+    ])
+    result = DeepAgentClient().generate_batch(
+        goal="设计整理任务", task_count=1, task_mode="standard", reference_text="",
+    )
+    assert result["tasks"] == [task]
+    assert all("search_history" not in tools for tools in model.offered_tools)
+
+
+def test_check_fills_materials_when_model_omits_them(monkeypatch, tmp_path):
+    task = _content(1, "", "standard")
+    draft = {key: value for key, value in task.items() if key != "materials"}
+    install(monkeypatch, tmp_path, [
+        call("check_tasks", {"tasks": [draft]}, 1),
+        call("GeneratedBatch", {"name": "任务集", "tasks": [task]}, 2),
+    ])
+    result = DeepAgentClient().generate_batch(
+        goal="整理用品", task_count=1, task_mode="standard", reference_text="",
+    )
+    assert result["tasks"] == [task]
 
 
 def test_reviewer_has_independent_skill_and_checks_optimized_body(monkeypatch, tmp_path):
@@ -94,7 +143,6 @@ def test_reviewer_has_independent_skill_and_checks_optimized_body(monkeypatch, t
     output = {"verdict": "pass", "issues": [], "summary": "修订任务名",
               "optimized_task": optimized}
     model = install(monkeypatch, tmp_path, [
-        call("search_history", {"keywords": ["收起"]}, 1),
         call("check_tasks", {"tasks": [optimized]}, 2),
         call("ReviewedTask", output, 3),
     ])
@@ -104,6 +152,21 @@ def test_reviewer_has_independent_skill_and_checks_optimized_body(monkeypatch, t
     pinned = [m for m in model.seen[0] if m.additional_kwargs.get("lc_source") == "pinned_skill"]
     assert [m.additional_kwargs["skill"]["name"] for m in pinned] == ["g2-task-reviewer"]
     assert not any("先确定一次具体活动" in str(m.content) for m in pinned)
+
+
+def test_reviewer_similarity_alone_does_not_reject_task(monkeypatch, tmp_path):
+    task = _content(1, "", "standard")
+    output = {"verdict": "needs_changes", "issues": [{
+        "severity": "error", "step_no": None, "rule_id": "BATCH_SIMILARITY",
+        "quote": "", "message": "与同批任务可能相似", "suggestion": "核对实际物品",
+    }], "summary": "需要核对", "optimized_task": task}
+    install(monkeypatch, tmp_path, [
+        call("check_tasks", {"tasks": [task]}, 1),
+        call("ReviewedTask", output, 2),
+    ])
+    result = DeepAgentClient().review_task(content=task, task_mode="standard", reference_text="")
+    assert result["verdict"] == "pass"
+    assert result["issues"][0]["severity"] == "warning"
 
 
 def test_unchecked_final_body_is_rejected_after_bounded_retry(monkeypatch, tmp_path):
@@ -125,7 +188,6 @@ def test_checking_old_draft_does_not_cover_changed_submission(monkeypatch, tmp_p
     unchecked = {**task, "name": "嘉兴数采-改变活动"}
     output = {"name": "变更", "tasks": [unchecked]}
     install(monkeypatch, tmp_path, [
-        call("search_history", {"keywords": ["整理"]}, 1),
         call("check_tasks", {"tasks": [task]}, 2),
         call("GeneratedBatch", output, 3), call("GeneratedBatch", output, 4),
     ])
@@ -138,7 +200,6 @@ def test_checking_old_draft_does_not_cover_changed_submission(monkeypatch, tmp_p
 def test_revise_preserves_feedback_and_returns_one_task(monkeypatch, tmp_path):
     task = _content(1, "", "standard")
     model = install(monkeypatch, tmp_path, [
-        call("search_history", {"keywords": ["整理"]}, 1),
         call("check_tasks", {"tasks": [task]}, 2),
         call("GeneratedBatch", {"name": "修订", "tasks": [task]}, 3),
     ])

@@ -4,7 +4,7 @@
 G2 机器人采集任务表自动质检脚本。
 
 用法:
-    python3 validate_tasks.py <任务表.xlsx|.csv> [--ledger <历史台账.csv>] [--min-steps 10] [--max-steps 20]
+    python3 validate_tasks.py <任务表.xlsx|.csv> [--ledger <历史台账.csv>] [--long] [--min-steps N] [--max-steps N]
 
 任务表支持的列（按表头识别，缺列自动跳过对应检查）:
     序号 / 任务名称 / 任务步骤 / 任务难度 / 场景标签 / 原子能力 / 任务指纹
@@ -65,7 +65,7 @@ ACTION_REQUIRED_TAG = [
     (r"系紧|系好|系上|系成|扎好|捆好", {"Tie"}),
     (r"包装|包裹|包好|包住|裹住|盖住", {"Package", "Cover"}),
     (r"盖章|盖印|印章", {"stamp"}),
-    (r"写字|书写|写明", {"Write"}),
+    (r"写字|书写|写明|画一横|画一条横线", {"Write"}),
     (r"倒进|倒入|倒到|倒满|倒出", {"Pour"}),
     (r"舀|铲起", {"Scoop", "Scoop up"}),
     (r"擦拭|干擦|擦去|擦[拭抹]", {"Wipe"}),
@@ -90,7 +90,7 @@ TAG_KEYWORD_HINT = {
     "Unplug": r"拔插头|拔", "PullOut": r"拔出|拔",
     "Stick": r"贴", "Tear": r"撕", "Tie": r"系|扎|捆",
     "Package": r"包|裹", "Cover": r"盖|遮|裹",
-    "stamp": r"章|盖印", "Write": r"写",
+    "stamp": r"章|盖印", "Write": r"写|画.*横",
     "Pour": r"倒", "Scoop": r"舀", "Scoop up": r"铲",
     "Wipe": r"擦", "Brush": r"刷", "Sweep": r"扫",
     "Pinch": r"夹|捏", "Clip": r"夹",
@@ -181,7 +181,7 @@ NON_PICK_PLACE_SKILLS = [
     "贴", "封", "缠", "绕", "绑", "系", "扎", "夹", "夹取", "舀", "铲", "倒", "蘸",
     "包", "裹", "塞", "卡", "扣", "撕", "剥", "翻", "码齐", "对齐", "拢", "整理",
     "堆叠", "叠放", "摞", "配对", "组装", "装", "压", "戳", "敲", "盖印", "盖章",
-    "书写", "写", "抽", "捏合", "收口", "排气", "卷绕", "理顺", "穿",
+    "书写", "写", "画一横", "画一条横线", "抽", "捏合", "收口", "排气", "卷绕", "理顺", "穿",
 ]
 
 # 拿起来源词（步骤里出现"拿起/取出/取下/夹起"等时，必须同时出现来源位置）
@@ -209,12 +209,15 @@ ONE_SHOT_PATTERNS = [
     r"一次性", r"一起(放|装|拿|插)",
 ]
 
-# 任务名规范（领导 2026-10-21 新规）：
-# “并”是复合动作的正确连接（铺平并叠好短裤），不再禁用；“XX后XX”整体禁用；
-# 和/与/及规范没提到，保守给提醒，不拦截。
+# 常见“并”连接动作的写法应改写；其他含“并”情形可能是固有名，仅提醒。
+NAME_AND_ACTION = re.compile(
+    r"(?<![合兼归吞])并(?:且|将|把|摆|铺|叠|折|拿|取|放|装|收|分|清|擦|刷|夹|拧|关|合|盖|开|拉|推|"
+    r"插|拔|挂|贴|码|堆|整|打|归|理|卷|搅|舀|拆|印|写|画|倒|压|按|拨)"
+)
+# “XX后XX”禁用；和/与/及只提醒人工复核。
 NAME_SOFT_WORDS = ["和", "与", "及"]
 # “后”作为方位词的合法用法，不当作“XX后XX”
-HOU_WHITELIST = ["前后", "后备", "后背", "后排", "后方", "后侧", "后面", "后座", "后部", "后端", "后盖"]
+HOU_WHITELIST = ["前后", "后备", "后背", "后排", "后方", "后侧", "后面", "后座", "后部", "后端", "后盖", "后厨"]
 # 场景描述由场景标签承担，不进任务名；确需使用时只能写成“在 xx”
 SCENE_WORDS = ["客房", "厨房", "卧室", "客厅", "书房", "办公室", "超市", "酒店", "柜台",
                "浴室", "阳台", "教室", "餐厅", "前台", "收银台", "仓库", "玄关", "卫生间"]
@@ -229,14 +232,22 @@ MULTI_PICK_PATTERN = re.compile(
 # “后”表示先后连接（排除 后方/后侧/后面/后部 等方位词，以及“从前向后对折”里的“向后”）
 AFTER_CONNECTOR_PATTERN = re.compile(r"(?<![前向往朝])后(?![方侧面部端排座背备])")
 STEP_MAX_CHARS = 30
-# 默认基地前缀；任务名格式为“基地-动宾短语”
-DEFAULT_BASE = "嘉兴数采"
 
 # P0 自动可判部分：其他复杂物理/5 套库存/动作顺序仍须人工核验
 BANNED_DETAIL_ITEMS = [
     "硬壳笔记本", "彩色圆珠笔", "茶杯", "咖啡杯", "旅行洗护瓶",
     "证件卡套", "防漏袋", "瓶盘",
 ]
+# 拟人化/精细修整动作正则（L-027）：平行夹爪无法完成或无实际作业意义的精细修整
+FUSSY_HUMAN_PATTERN = re.compile(
+    r"让.{0,8}(?:标签|商标|盒面|正面|牌面|图案|字样)朝"
+    r"|提手(?:竖起|分开|理顺|拨正)"
+    r"|(?:袋身|袋面|桌布)抚平|抚平【[^】]+】的(?:袋面|袋身)"
+    r"|四角(?:向上)?(?:包起|压平)"
+    r"|(?:扣好|按好).{0,6}卡扣"
+    r"|搭在.{0,6}(?:边沿|桌角|台角)"
+    r"|擦拭【[^】]+】(?:内壁|内底|瓶身|罐身|盒面|壳身|提手|边沿|牌面|盘面)"
+)
 FIXED_ENVIRONMENTS = {
     "桌面", "台面", "桌子", "书桌", "货架", "置物架", "书架",
     "床面", "桌面抽屉", "晾衣杆", "挂钩",
@@ -261,7 +272,7 @@ def is_l017_watering(step: str, joined: str = "") -> bool:
     if not re.search(r"倒(?:入|进|到|向|往)[^，。；\n]{0,24}水(?!油)", step):
         return False
     return bool(re.search(r"【水瓶】", step) or re.search(r"【水瓶】", joined))
-STRICT_STEP_FORMAT = re.compile(r"^\d{1,2}\.[^\s]")
+STRICT_STEP_FORMAT = re.compile(r"^\d+\.[^\s]")
 
 
 # 宾语前置启发式：名称主体（去掉前缀后）以这些动词结尾且长度短，疑似"宾语+动词"
@@ -289,7 +300,7 @@ def split_steps(raw: str):
     steps = []
     for line in lines:
         # 同一行里可能有多个编号
-        parts = re.split(r"(?:^|[\s；;])\s*(\d{1,2})\s*[\.、\)）:：]\s*", line)
+        parts = re.split(r"(?:^|[\s；;])\s*(\d+)\s*[\.、\)）:：]\s*", line)
         if len(parts) > 1:
             # parts: 前缀, 编号, 内容, 编号, 内容...
             for i in range(1, len(parts), 2):
@@ -298,7 +309,7 @@ def split_steps(raw: str):
                     steps.append(content)
         else:
             # 无编号，若整行非空也算一步
-            cleaned = re.sub(r"^\d{1,2}\s*[\.、\)）:：]\s*", "", line).strip()
+            cleaned = re.sub(r"^\d+\s*[\.、\)）:：]\s*", "", line).strip()
             if cleaned:
                 steps.append(cleaned)
     return steps
@@ -317,9 +328,93 @@ def has_non_pick_skill(steps):
     return [w for w in NON_PICK_PLACE_SKILLS if w in joined]
 
 
+from collections import Counter
+
+# 平台非拿放原子技能映射，仅用于步骤近似提示，不单独决定判重。
+STEP_ATOMIC_SKILL_MAP = [
+    (r"拉开?拉链|拉链.*拉开", "Unzip"),
+    (r"拉合|拉上.*拉链|拉链.*拉[合上]", "CloseZip"),
+    (r"拧开|拧松", "OpenJar"),
+    (r"拧紧|拧回|拧好|拧上", "CloseJar"),
+    (r"打开.*(?:盒|箱|篮|筐)|掀开.*(?:盒|箱|篮)", "OpenBox"),
+    (r"合上.*(?:盒|箱|篮|筐)|盖好.*(?:盒|箱)|关闭.*(?:盒|箱)", "CloseBox"),
+    (r"拿下.*盖|取下.*盖|掀开.*盖|揭开.*盖|打开.*盖", "Uncap"),
+    (r"盖回|盖在|盖上.*盖", "Cover"),
+    (r"折叠|对折|折起|折好", "Fold"),
+    (r"展开|铺平|抖开|铺开|铺在", "Unfold"),
+    (r"撑开|张开", "Spread open"),
+    (r"卷成|卷起|卷绕|绕成", "Roll"),
+    (r"叠放(?!的)|堆叠|摞[到齐在好上]|码垛|套在□", "Stack"),
+    (r"拆下|拆卸|取下.*套", "Unstack"),
+    (r"擦拭|干擦|擦去|擦[拭抹]", "Wipe"),
+    (r"刷|干刷", "Brush"),
+    (r"夹取|夹起|捏住|捏起", "Pinch"),
+    (r"夹住|夹封|别在", "Clip"),
+    (r"倒进|倒入|倒到|倒满|倒出|倒掉", "Pour"),
+    (r"舀", "Scoop"),
+    (r"铲起|铲入", "Scoop up"),
+    (r"搅拌", "Stir"),
+    (r"挂到|挂回|挂在|挂上", "Hang"),
+    (r"从.*(?:架|杆|钩).*取下", "Takedown"),
+    (r"插入|插进|插好|插到|套入|套进|套上", "Insert"),
+    (r"拔出|拔下|拔起|拔掉", "PullOut"),
+    (r"拔插头", "Unplug"),
+    (r"按压|按下|按住|拍松|扣上", "Press"),
+    (r"拨动|拨开|拨回", "Toggle"),
+    (r"推合|推到|推进|推回", "Push"),
+    (r"拉动|拉开(?!.*拉链)|拉直", "Pull"),
+    (r"摇动|摇匀|晃动", "Shake"),
+    (r"贴在|贴到|粘贴", "Stick"),
+    (r"盖章|盖印", "stamp"),
+    (r"画一横|画一条横线", "Write"),
+    (r"解开|松开", "Untie"),
+    (r"系紧|系好|扎好", "Tie"),
+    (r"翻开|翻页", "Flip"),
+]
+
+_LOC_RE = re.compile(
+    r"桌面|台面|书桌|货架|展示架|陈列架|样品架|展示台|促销台|置物架"
+    r"|上层|下层|左前侧|右前侧|左后方|左上角|右上角|左下角|右下角"
+    r"|前侧|后侧|左侧|右侧|中央|左边|右边|内部|一侧|靠里位置|原位"
+)
+
+
+def _step_skills(step: str):
+    plain = re.sub(r"【[^】]*】", "□", step)
+    found = []
+    if re.search(r"用【[^】]*夹】", step):
+        found.append("Pinch")
+    for pat, tag in STEP_ATOMIC_SKILL_MAP:
+        if re.search(pat, plain) and tag not in found:
+            found.append(tag)
+    return found
+
+
+def extract_non_pick_atomic_skills(steps):
+    skills = []
+    for s in steps:
+        for tag in _step_skills(s):
+            if tag not in skills:
+                skills.append(tag)
+    return skills
+
+
+def step_skeletons(steps):
+    """提取无序动作步骨架；屏蔽物品和方位可能误合并，仅作复核线索。"""
+    out = []
+    for s in steps:
+        sk = _step_skills(s)
+        if sk:
+            out.append("SKILL:" + "+".join(sk))
+            continue
+        plain = re.sub(r"【[^】]*】", "□", s)
+        plain = _LOC_RE.sub("○", plain)
+        out.append(plain)
+    return out
+
+
 def task_fingerprint(name, steps, scene=""):
-    """从任务名+步骤提取指纹：对象集合 + 动作序列（完整，供集合相似度比较）。
-    本函数是唯一的指纹提取入口，build_ledger.py 也复用，保证两边口径一致。"""
+    """从任务名和步骤提取对象、动作及骨架，用于同批近似提示。"""
     joined = "".join(steps)
     objects = sorted(set(re.findall(r"【([^】\d]*?)(?:\d+)?】", joined)))
     actions = []
@@ -327,23 +422,28 @@ def task_fingerprint(name, steps, scene=""):
         for w in NON_PICK_PLACE_SKILLS:
             if w in s and w not in actions:
                 actions.append(w)
+    atomic_skills = extract_non_pick_atomic_skills(steps)
+    skeletons = step_skeletons(steps)
     return {
         "name": name,
         "scene": scene,
         "objects": objects,
         "actions": actions,
+        "atomic_skills": atomic_skills,
+        "step_skeletons": skeletons,
+        "literal_steps": [re.sub(r"\s+", "", s) for s in steps],
         "signature": "|".join(objects) + "::" + ",".join(actions),
     }
 
 
-def similarity(a, b):
-    """两个指纹的相似度：动作序列重合度与对象重合度的均值。"""
-    oa, ob = set(a["objects"]), set(b["objects"])
-    aa, ab = set(a["actions"]), set(b["actions"])
-    osim = len(oa & ob) / max(1, len(oa | ob))
-    asim = len(aa & ab) / max(1, len(aa | ab))
-    # 动作相似权重更高
-    return 0.6 * asim + 0.4 * osim
+def step_difference(a, b):
+    """无序一对一匹配动作骨架，以较长任务为分母；缺步骤时返回 None。"""
+    ska = a.get("step_skeletons") or []
+    skb = b.get("step_skeletons") or []
+    if not ska or not skb:
+        return None
+    inter = sum((Counter(ska) & Counter(skb)).values())
+    return 1.0 - inter / max(len(ska), len(skb))
 
 
 def validate_atomic_tags(raw_tags, joined):
@@ -388,7 +488,16 @@ def validate_atomic_tags(raw_tags, joined):
     return issues, tags
 
 
-def validate_row(row, min_steps, max_steps, ledger_sigs):
+def resolve_step_limits(long_task, min_steps, max_steps):
+    """默认长任务按 30 步提示，自定义边界由用户要求决定。"""
+    recommended = 30 if (long_task and min_steps is None
+                         and (max_steps is None or max_steps >= 30)) else None
+    minimum = min_steps if min_steps is not None else (1 if long_task else 10)
+    maximum = max_steps if max_steps is not None else (None if long_task else 20)
+    return minimum, maximum, recommended
+
+
+def validate_row(row, min_steps, max_steps, ledger_sigs, recommended_min_steps=None):
     issues = []
     name = str(row.get("任务名称", "") or "").strip()
     steps_raw = row.get("任务步骤", "")
@@ -403,42 +512,50 @@ def validate_row(row, min_steps, max_steps, ledger_sigs):
         for w, rid in LEARNED_BANS:
             if w in name:
                 issues.append(("BLOCK", f"任务名称违反教训库 {rid}：含『{w}』：{name}"))
-        has_base = "-" in name
-        main = name.split("-", 1)[1] if has_base else name
-        if not has_base:
-            issues.append(("WARN", f"任务名称缺少基地前缀（应为『{DEFAULT_BASE}-{name}』）"))
+        base, separator, subject = name.partition("-")
+        main = (subject if separator else name).strip()
+        if not separator or not base.strip():
+            issues.append(("BLOCK", f"任务名称缺少实际基地前缀，应为『基地-任务主体』：{name}"))
+        if not main:
+            issues.append(("BLOCK", "任务名称缺少核心动作"))
+        if NAME_AND_ACTION.search(main):
+            issues.append(("BLOCK", f"任务名称不得含『并』连接复合动作，请直接连写或概括共同目标：{name}"))
+        elif "并" in main:
+            issues.append(("WARN", f"任务主体含『并』，请避免用作动作连接词；固有物品名称可保留：{name}"))
         masked = main
         for ok_word in HOU_WHITELIST:
             masked = masked.replace(ok_word, "")
         if "后" in masked:
-            issues.append(("BLOCK", f"任务名称禁用“XX后XX”，复合动作直接连写（铺平并叠好短裤）：{name}"))
-        if "并" in main:
-            issues.append(("WARN", f"任务名称含「并」：尽量合成一个概括整件事的动宾短语，合不成才保留（L-032）：{name}"))
+            issues.append(("BLOCK", f"任务名称禁用“XX后XX”，应概括共同目标（如折叠短裤）：{name}"))
         for w in NAME_SOFT_WORDS:
             if w in main:
-                issues.append(("WARN", f"任务名称含『{w}』：规范只认动宾并列用“并”，确认不是名词并列：{name}"))
+                issues.append(("WARN", f"任务名称含『{w}』：请确认名称概括同一工作而非罗列步骤：{name}"))
         for sw in SCENE_WORDS:
             if sw in main and f"在{sw}" not in main and f"从{sw}" not in main:
-                issues.append(("WARN", f"任务名称含场景词『{sw}』：场景交给场景标签，确需使用写成“在{sw}…”：{name}"))
+                issues.append(("WARN", f"任务名称含场景词『{sw}』：场景一般省略，确需说明时可用『在{sw}』；物品名称请按语义核对：{name}"))
         for v in OBJECT_FIRST_VERBS:
             if main.endswith(v) and len(main) <= len(v) + 6:
                 issues.append(("BLOCK", f"任务名称宾语前置（以『{v}』结尾），应动词在前宾语在后：{name}"))
         if main.startswith("把") or main.startswith("将"):
             issues.append(("BLOCK", f"任务名称用了“把/将”句式，属于宾语前置，应动词在前：{name}"))
+        if re.search(r"从.+?(?:放到|移到|拿到|摆到)|拿起.+?(?:对折|放到|放进)", main) or "、" in main:
+            issues.append(("BLOCK", f"任务名称写核心动作，不写步骤过程或起止位置（反例：把衣服叠好从床上放到旁边的椅子上）：{name}"))
+        if re.search(r"(?:工作|任务|流程|事宜|作业)$", main) or main.startswith("结束"):
+            issues.append(("BLOCK", f"任务名称须直接体现机器人核心物理动作，不写抽象工作名（反例：结束槟榔试吃工作）：{name}"))
 
     # ---- P0：物料名称、括号边界与步骤编号 ----
     for obj in extract_brackets(joined):
         if obj in FIXED_ENVIRONMENTS:
             issues.append(("BLOCK", f"固定环境/家具不可加【】标注：{obj}"))
         if any(bad in obj for bad in BANNED_DETAIL_ITEMS):
-            issues.append(("BLOCK", f"物料名称过细或违规：{obj}（应退回通用基础词并核验库存）"))
+            issues.append(("BLOCK", f"物料名称过细或违规：{obj}（应退回通用基础词，如 茶杯/咖啡杯→杯子、硬壳笔记本→笔记本、彩色圆珠笔→圆珠笔）"))
     ordinal = 0
     for line_no, raw_line in enumerate(str(steps_raw or "").replace("\r", "\n").split("\n"), 1):
         raw_line = raw_line.strip()
         if not raw_line:
             continue
         ordinal += 1
-        match = re.match(r"^(\d{1,2})\.([^\s].*)$", raw_line)
+        match = re.match(r"^(\d+)\.([^\s].*)$", raw_line)
         if not match:
             issues.append(("BLOCK", f"第{line_no}行编号格式不符，应为 1.xxx 且英文点后无空格：{raw_line[:45]}"))
         elif int(match.group(1)) != ordinal:
@@ -450,8 +567,19 @@ def validate_row(row, min_steps, max_steps, ledger_sigs):
         issues.append(("BLOCK", "未解析出任何步骤（检查步骤是否按换行+编号填写）"))
     elif n < min_steps:
         issues.append(("BLOCK", f"步骤数 {n}，少于下限 {min_steps}"))
-    elif n > max_steps:
+    elif max_steps is not None and n > max_steps:
         issues.append(("BLOCK", f"步骤数 {n}，超过上限 {max_steps}；请检查是否拆步注水或确需扩展"))
+    elif recommended_min_steps is not None and n < recommended_min_steps:
+        issues.append(("WARN", f"长任务 {n} 步，建议 {recommended_min_steps} 步以上；优先补充同目标的关联工作和必要物料，时长须实测"))
+
+    # 是否需要清洁依赖上下文；没有明显脏污线索时提示，不把关键词当成语义证明。
+    clean_actions = [s for s in steps if re.search(
+        r"擦|刷拭|刷洗|干刷|刷去|刷掉|用.{0,10}刷", re.sub(r"【[^】]*】", "", s))]
+    if clean_actions and not re.search(
+        r"灰尘|积灰|浮灰|灰渍|尘土|粉尘|污渍|污垢|污迹|油渍|油污|水渍|脏污|沾灰|有灰|有污|脏了|脏的|洒落|残留|擦去.{0,8}灰",
+        name + joined,
+    ):
+        issues.append(("WARN", "擦拭或刷拭缺少明确脏污线索：逐处核对交付内容中的清洁对象、污渍或积灰及清洁原因；无依据应删除"))
 
     # ---- 逐步检查 ----
     for i, s in enumerate(steps, 1):
@@ -472,9 +600,15 @@ def validate_row(row, min_steps, max_steps, ledger_sigs):
             if w in s:
                 issues.append(("BLOCK", f"第{i}步含能力越界内容『{w}』：{s}"))
                 break
+        hit_learned = False
         for w, rid in LEARNED_BANS:
             if w in s:
                 issues.append(("BLOCK", f"第{i}步违反教训库 {rid}：含『{w}』：{s}"))
+                hit_learned = True
+        if not hit_learned:
+            m_fussy = FUSSY_HUMAN_PATTERN.search(s)
+            if m_fussy:
+                issues.append(("BLOCK", f"第{i}步含拟人化或精细修整动作『{m_fussy.group(0)}』（违反 L-027，请改为正规朴素机器动作，擦拭统一写『擦拭【XX】表面』）：{s}"))
         if (("【键盘】" in s and "支脚" in s)
                 or ("【电脑支架】" in s and "高度旋钮" in s)):
             issues.append(("WARN", f"第{i}步依赖型号结构；未核验现有物料时应换为同场景相邻作业：{s}"))
@@ -486,8 +620,9 @@ def validate_row(row, min_steps, max_steps, ledger_sigs):
         for pat in ONE_SHOT_PATTERNS:
             if re.search(pat, s):
                 issues.append(("BLOCK", f"第{i}步疑似一步到位（同类多件须拆步）：{s}"))
-        # 一步一个动作：用户 2026-10-21 要求“尽量不要过长”，所以只给提醒不拦截
         plain = re.sub(r"【[^】]*】", "□", s)
+        if re.search(r"(?:打开|取下|拿下|掀开).*(?:盖子|盒盖|箱盖).*(?:放到|放在|放回|放置)", plain):
+            issues.append(("BLOCK", f"第{i}步开盖或取盖与放下盖子须拆成两步：{s}"))
         if MULTI_PICK_PATTERN.search(plain):
             issues.append(("WARN", f"第{i}步『拿起』后面还带了别的动作，建议拆成两步（先拿起，再做动作）：{s}"))
         if "并" in plain:
@@ -547,12 +682,22 @@ def validate_row(row, min_steps, max_steps, ledger_sigs):
     if opens and ("盖回" not in joined and "盖到" not in joined and "盖上" not in joined and "合上" not in joined):
         issues.append(("WARN", "出现开盖动作但未见盖回/合上，请人工确认盖子去向闭环"))
 
-    # ---- 指纹去重 ----
+    # ---- 同批步骤近似提示；外部台账只比较名称 ----
     fp = task_fingerprint(name, steps, scene)
     for old in ledger_sigs:
-        sim = similarity(fp, old)
-        if sim >= 0.75:
-            issues.append(("BLOCK", f"与历史任务『{old['name']}』高度相似（相似度 {sim:.2f}），疑似重复"))
+        if old.get("history"):
+            current_name = name.split("-", 1)[-1].strip()
+            old_name = old["name"].split("-", 1)[-1].strip()
+            if current_name and current_name == old_name:
+                issues.append(("WARN", f"历史任务同名：『{old['name']}』；名称相同不代表步骤重复，按需人工筛选"))
+            continue
+        literal, old_literal = fp["literal_steps"], old.get("literal_steps") or []
+        if literal and old_literal and Counter(literal) == Counter(old_literal):
+            issues.append(("BLOCK", f"与同批任务『{old['name']}』的步骤完全相同（忽略顺序）"))
+            continue
+        diff = step_difference(fp, old)
+        if diff is not None and diff < 0.5:
+            issues.append(("WARN", f"与同批任务『{old['name']}』动作骨架估计差异 {diff*100:.0f}%（允许50%重复）；骨架会忽略物品和细节，请按实际步骤及用途复核"))
     ledger_sigs.append(fp)
 
     return issues, fp, skills
@@ -568,28 +713,25 @@ def load_table(path: Path):
 
 def load_ledger(path: Path):
     import pandas as pd
-    df = pd.read_csv(path).fillna("") if path.suffix.lower() == ".csv" else pd.read_excel(path).fillna("")
-    sigs = []
-    for _, r in df.iterrows():
-        objs = [o for o in str(r.get("操作对象集合", "")).split("|") if o]
-        acts = [a for a in str(r.get("核心动作序列", "")).split(",") if a]
-        sigs.append({
-            "name": str(r.get("任务名称", "")),
-            "scene": str(r.get("场景标签", "")),
-            "objects": objs,
-            "actions": acts,
-            "signature": "|".join(objs) + "::" + ",".join(acts),
-        })
-    return sigs
+    reader = pd.read_csv if path.suffix.lower() == ".csv" else pd.read_excel
+    df = reader(path, usecols=lambda column: column in {"任务名称", "任务名字"}, dtype=str).fillna("")
+    if "任务名称" not in df.columns and "任务名字" not in df.columns:
+        raise ValueError("历史表缺少『任务名称』或『任务名字』列，无法比较名称")
+    return [{"name": str(r.get("任务名称", r.get("任务名字", ""))).strip(), "history": True}
+            for _, r in df.iterrows()]
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("tasks", help="任务表 .xlsx/.csv")
-    ap.add_argument("--ledger", help="历史任务台账 .csv/.xlsx")
-    ap.add_argument("--min-steps", type=int, default=10)
-    ap.add_argument("--max-steps", type=int, default=20)
+    ap.add_argument("--ledger", help="可选历史表 .csv/.xlsx；仅提示同名，不比较历史步骤")
+    ap.add_argument("--long", action="store_true", help="长任务建议30步以上，未达时提醒复核，无默认上限")
+    ap.add_argument("--min-steps", type=int)
+    ap.add_argument("--max-steps", type=int)
     args = ap.parse_args()
+    min_steps, max_steps, recommended = resolve_step_limits(args.long, args.min_steps, args.max_steps)
+    if min_steps < 1 or (max_steps is not None and max_steps < min_steps):
+        ap.error("步数下限须为正数，上限不得小于下限")
 
     df = load_table(Path(args.tasks))
     required = {"任务名称", "任务步骤"}
@@ -599,13 +741,16 @@ def main():
         sys.exit(2)
 
     ledger = load_ledger(Path(args.ledger)) if args.ledger else []
-    print(f"载入历史台账指纹 {len(ledger)} 条；本批任务 {len(df)} 条\n")
+    print(f"本批任务 {len(df)} 条")
+    if args.ledger:
+        print(f"已读取指定表格的任务名称 {len(ledger)} 条")
+    print()
 
     block_cnt = warn_cnt = pass_cnt = 0
     skill_family = {}
     for idx, row in df.iterrows():
         seq = row.get("序号", idx + 1)
-        issues, fp, skills = validate_row(row, args.min_steps, args.max_steps, ledger)
+        issues, fp, skills = validate_row(row, min_steps, max_steps, ledger, recommended)
         blocks = [i for i in issues if i[0] == "BLOCK"]
         warns = [i for i in issues if i[0] == "WARN"]
         for s in skills:
@@ -631,7 +776,7 @@ def main():
     if skill_family:
         top = sorted(skill_family.items(), key=lambda x: -x[1])[:10]
         print("命中技能词频 Top10：", "，".join(f"{k}×{v}" for k, v in top))
-    print("\n提醒：真实作业必要性、物料五套库存、物品闭环及双臂可行性需要人工终检（见 references/02-writing-and-review.md）。")
+    print("\n提醒：真实作业必要性、现场时长、物料五套库存、物品闭环及双臂可行性须现场或人工验证（见 references/02-writing-and-review.md）。")
     sys.exit(1 if block_cnt else 0)
 
 

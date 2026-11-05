@@ -14,6 +14,7 @@ from .. import db, ids
 from ..config import CONFIG
 from ..errors import ApiError, invalid_state, not_found
 from ..tools.validation import materials_to_text
+from . import batch_checks
 from . import render
 
 COLUMNS = ["任务名字", "任务步骤", "单套所需物料", "状态", "审核意见"]
@@ -29,22 +30,26 @@ STATUS_TEXT = {
 }
 
 
-def _review_cell(conn: Any, task_id: str) -> str:
+def _review_cell(conn: Any, task_id: str, batch_issues: list[dict[str, Any]]) -> str:
     row = conn.execute(
         "SELECT verdict, summary, issues_json FROM reviews WHERE task_id=?"
         " ORDER BY created_at DESC, id DESC LIMIT 1",
         (task_id,),
     ).fetchone()
-    if row is None:
-        return ""
-    parts = [f"AI审核：{'通过' if row['verdict'] == 'pass' else '有问题'}｜{row['summary']}"]
-    try:
-        issues = __import__("json").loads(row["issues_json"])
-    except ValueError:
-        issues = []
+    parts = []
+    issues = []
+    if row is not None:
+        parts.append(f"AI审核：{'通过' if row['verdict'] == 'pass' else '有问题'}｜{row['summary']}")
+        try:
+            issues = __import__("json").loads(row["issues_json"])
+        except ValueError:
+            issues = []
     for issue in issues[:8]:
+        if (issue.get("rule_id") or "").startswith("SYSTEM_BATCH_"):
+            continue
         step = f"第{issue['step_no']}步 " if issue.get("step_no") else ""
         parts.append(f"{step}{issue.get('message', '')}")
+    parts.extend(f"同批对比：{issue['message']}" for issue in batch_issues)
     return "\n".join(parts)
 
 
@@ -101,6 +106,7 @@ def create_export(
     ws = wb.active
     ws.title = "任务导出"
     ws.append(COLUMNS)
+    batch_findings = batch_checks.current_issues(conn, batch_id)
     for task, version in version_rows:
         content = _loads(version["content_json"])
         row_values = [
@@ -108,7 +114,7 @@ def create_export(
             _steps_cell(content["steps"]),
             _materials_cell(content["materials"]),
             STATUS_TEXT.get(task["status"], task["status"]),
-            _review_cell(db.get_conn(), task["id"]),
+            _review_cell(conn, task["id"], batch_findings.get(task["id"], [])),
         ]
         ws.append(row_values)
         # openpyxl 会把 "=" 开头的字符串当公式（data_type='f'）；

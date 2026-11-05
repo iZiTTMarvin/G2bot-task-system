@@ -13,7 +13,6 @@ from typing import Any
 
 from ..tools.skill_bundle import load_bundle
 from ..errors import ModelCallError
-from ..prompts_spec import STEP_RANGES
 
 
 def _snapshot_materials():
@@ -21,8 +20,8 @@ def _snapshot_materials():
 
 
 def _steps(index: int, mode: str, marker: str = "") -> list[str]:
-    lo, _hi = STEP_RANGES[mode]
-    n = lo + (index % 3) * 2  # 10/12/14 或 20/22/24，均在范围内
+    lo = 30 if mode == "long" else 10
+    n = lo + (index % 3) * 2
     steps: list[str] = []
     for i in range(n):
         pair = i % 2

@@ -77,7 +77,7 @@ def fill_text(text):
         if re.match(r"^#+\s*\S", s):
             finish()
             name, steps, has_material = s, [], False
-        elif re.match(r"^\d{1,2}\.", s):
+        elif re.match(r"^\d+\.", s):
             steps.append(s)
         elif re.match(r"^(单套所需)?物料[：:]", s):
             has_material = True

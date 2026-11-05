@@ -12,18 +12,19 @@
 
 ## 一次运行做什么
 
-1. 后台作业根据批次的规则编号读取已冻结文件，校验完整清单。
-2. 生成 Agent 加载 `g2-task-generator`，读取领域规则，按活动、初态、终态写任务；可检索历史、读取参考、汇总物料。
-3. Agent 调用 `check_tasks` 检查整个候选批次，接收硬规则、物料、历史与连续段重叠线索后修订。
-4. 检查工具返回正文 SHA-256 作为 candidate_id。结构化提交只引用这个编号，运行时取回已检查的完整草稿，避免模型重复抄写正文引入差异。还必须有实际历史检索证据；缺失证据时只补交一次，再缺失就明确失败。
-5. 后端保存草稿并执行独立门禁；审查 Agent 加载 `g2-task-reviewer`，从正文重新判断，必要时修改、检查后返回结论。后端再次校验优化稿并保存版本。
-6. 人工复核与导出继续沿用原有流程。AI 通过不等于人工通过。
+1. 后台作业根据批次的规则编号读取已冻结文件，校验运行所需规则和角色文件。
+2. 生成 Agent 加载 `g2-task-generator`，按活动、初态、终态写任务；没有物料库时可选常见物品，不得声称现场库存已核验。
+3. Agent 调用 `check_tasks` 检查整个候选批次。未填写物料时根据步骤中的【】自动汇总；单任务规则和同批比较结果分别提供。
+4. 检查工具返回正文 SHA-256 作为 candidate_id。结构化提交只引用这个编号，运行时取回已检查的完整草稿，避免模型重复抄写正文引入差异。
+5. 审查 Agent 加载 `g2-task-reviewer`，从正文、目标和同批当前任务重新判断。全部审核结束后重新比较当前批次；修改后的版本单独保存。
+6. 文字步骤完全相同（不计顺序）阻断确认；骨架近似只做提示，不因模型猜测相似就阻断。人工复核与导出继续沿用原有流程。
 
 Skill、提示词和工具各司其职：角色提示词规定职责与输出协议，Skill 规定工作方法，共享领域规则提供约束，工具执行确定性计算。脚本通过不能证明活动有意义、五套库存齐备、夹爪可执行或时长达到要求。
 
 ## 运行范围与状态
 
-- 使用 SDK 的 `SkillsMiddleware` 加载并显式固定当前角色 Skill；`MemoryMiddleware` 注入核心原则、速查、能力及写作审查规范，其他参考与资源按需读取。
+- 使用 SDK 的 `SkillsMiddleware` 加载并显式固定当前角色 Skill；`MemoryMiddleware` 注入核心原则，其他参考按需读取。
+- 生成和改写不检索历史任务库；同批对比只读取本批任务的当前版本。`compare_step_matches` 只核算提供的一对一配对，不能证明语义相同或现场可行。
 - SDK 的文件 backend 为本次调用的 `StateBackend`，只装入规则包。只开放 `ls/read_file/glob/grep` 和业务工具，不开放主机文件或 shell。
 - 通过模型的精确 HarnessProfile 关闭通用子代理，且不暴露 `task/execute/write_file/edit_file/delete`。没有经理、Swarm 或跨 Agent 聊天共享。
 - `write_todos` 只管理本次 Agent 内部计划；任务版本、审核、作业和人工决定仍由 SQLite 负责。
@@ -33,22 +34,27 @@ Skill、提示词和工具各司其职：角色提示词规定职责与输出协
 
 ## 更新 Skill
 
-完整上游固定为 `C:\Users\xuhaochen\.kiro\skills\g2-robot-task-designer-v2`。不再读取旧 `.agents` 目录，不修改上游或自动写历史台账。
+完整上游为 `C:\Users\xuhaochen\.agents\skills\g2-robot-task-designer-v2`。同步不修改上游或自动写历史台账。
 
 停止服务后，在仓库根目录执行：
 
 ```powershell
-& backend\.venv\Scripts\python.exe backend\scripts\sync_skills.py 'C:\Users\xuhaochen\.kiro\skills\g2-robot-task-designer-v2'
-& backend\.venv\Scripts\python.exe skills\snapshot\scripts\regression.py
-& backend\.venv\Scripts\python.exe skills\snapshot\scripts\segment_overlap_regression.py
+& backend\.venv\Scripts\python.exe backend\scripts\sync_skills.py 'C:\Users\xuhaochen\.agents\skills\g2-robot-task-designer-v2'
+Push-Location backend
+$ruleDir = & .\.venv\Scripts\python.exe -c "from app.tools.skill_bundle import freeze_bundle; print(freeze_bundle().root)"
+Pop-Location
+python -B (Join-Path $ruleDir 'scripts/regression.py')
+python -B (Join-Path $ruleDir 'scripts/segment_overlap_regression.py')
 & backend\.venv\Scripts\python.exe -m pytest backend\tests -q
 ```
 
-同步器完整复制源文件，排除字节码与缓存，按清单替换已废弃文件，并记录全部文件及两个角色 Skill 的 SHA-256。角色 Skill 修改后也要重跑同步器更新清单。Git 通过 `.gitattributes` 保持 Skill 文件字节，避免检出时行尾转换破坏哈希。
+Skill 完整回归使用含 `pandas` 和 `openpyxl` 的 Python 环境。项目运行本身不依赖 `pandas`；运行包由清单冻结，保留在旧目录中的历史资产不会复制到运行包。修改角色 Skill 前应先冻结当前规则包；如果旧包没有归档且文件已被改动，同步器会拒绝将改动后的文件冒充旧快照。
+
+同步器复制源文件并记录全部文件及两个角色 Skill 的 SHA-256。旧版专有资产保留在本地，不纳入新版清单或运行时资料。角色 Skill 修改后也要重跑同步器更新清单。Git 通过 `.gitattributes` 保持 Skill 文件字节，避免检出时行尾转换破坏哈希。
 
 两个角色入口与共享 `snapshot/` 是共同安装的运行包，不能只复制一个入口文件后声称资源齐备。运行时将共享源 Skill 的核心原则映射到 `/rules/SKILL.md`，其原有聊天交付、导出、台账回写和自我进化流程由系统职责接管；完整源文件仍在仓库快照中保留。
 
-新建批次时将完整规则、资源及角色 Skill 冻结到 `data/rule-snapshots/<rule_snapshot_id>/`，后续调用和校验都按该编号加载。规则目录更新不会改变已冻结批次。快照缺失或哈希不符时返回 `RULE_TOOL_FAILED`，不借用当前规则冒充旧版本。
+新建批次时将运行所需规则、资源及角色 Skill 冻结到 `data/rule-snapshots/<rule_snapshot_id>/`，后续调用和校验都按该编号加载。规则目录更新不会改变已冻结批次。快照缺失或所需文件哈希不符时返回 `RULE_TOOL_FAILED`，不借用当前规则冒充旧版本；旧版历史任务资产不参与运行或完整性检查。
 
 ## 查看执行证据
 
@@ -63,7 +69,7 @@ Skill、提示词和工具各司其职：角色提示词规定职责与输出协
 & backend\.venv\Scripts\python.exe -m pip check
 ```
 
-2026-10-30 本地验证：
+以下是 2026-10-30 的历史验证记录，不代表新版规则接入后的质量结论：
 
 - 后端 86 项测试通过，覆盖既有业务流程与新增 Agent 集成。
 - 用脚本模型驱动真实 SDK 图，验证 Skill/核心规则加载、错误草稿检查、修订后重查、角色隔离、执行预算，以及跳过检查或检查后改稿不能直接提交。
@@ -86,6 +92,6 @@ Skill、提示词和工具各司其职：角色提示词规定职责与输出协
 
 本地原始结果：`data/agent-validation/real-comparison/comparison.json`；对应轨迹位于同目录的 `agent-traces/standalone/`。旧通路仅在隔离对照脚本中从 Git 基线载入，应用中没有旧客户端或运行时回退。
 
-第一次真实验证发现“检查后重抄正文导致内容变化”，随后改为提交已检查候选编号，再跑通新通路。当前规则包编号为 `rs_e7b88d722590e7fd`。
+第一次真实验证发现“检查后重抄正文导致内容变化”，随后改为提交已检查候选编号，再跑通当时的通路。
 
 这证明框架和工具闭环已运行，不证明整体质量已经提升。新通路在本样本中明显更慢；重复折线等动作的必要性仍需人工判断，五套物料、夹爪适配和实际时长仍未现场验证。

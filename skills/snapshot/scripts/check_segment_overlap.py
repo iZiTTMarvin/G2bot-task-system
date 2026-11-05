@@ -51,16 +51,13 @@ def find_overlaps(left, right=None, min_run=4, mask_objects=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("batch")
-    parser.add_argument("--history")
     parser.add_argument("--min-run", type=int, default=4)
     parser.add_argument("--mask-objects", action="store_true")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     if args.min_run < 2:
         parser.error("--min-run 至少为2")
-    rows = find_overlaps(load_tasks(args.batch),
-                         load_tasks(args.history) if args.history else None,
-                         args.min_run, args.mask_objects)
+    rows = find_overlaps(load_tasks(args.batch), None, args.min_run, args.mask_objects)
     Path(args.output).write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"发现 {len(rows)} 段待人工复核的连续重叠；不是自动淘汰或通过结论。")
 

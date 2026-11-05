@@ -25,7 +25,7 @@ class MaterialIn(StrictModel):
 
 class TaskContentIn(StrictModel):
     name: str = Field(min_length=1, max_length=200)
-    steps: list[str] = Field(min_length=1, max_length=100)
+    steps: list[str] = Field(min_length=1)
     materials: list[MaterialIn] = Field(min_length=1, max_length=100)
 
 

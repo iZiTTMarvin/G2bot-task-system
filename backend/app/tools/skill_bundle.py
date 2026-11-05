@@ -15,6 +15,7 @@ from ..config import CONFIG
 from ..errors import ApiError
 
 _LOCK = threading.Lock()
+_HISTORY_ASSETS = frozenset({"assets/delivered_tasks.txt", "assets/existing_tasks_feishu.txt"})
 
 
 def _hash(path: Path) -> str:
@@ -34,6 +35,8 @@ class SkillBundle:
                 raise ValueError("规则快照编号与清单不一致")
         self._modules: dict[str, ModuleType] = {}
         for relative, expected in self.manifest["files"].items():
+            if relative in _HISTORY_ASSETS:
+                continue
             file = (root / relative).resolve()
             if not file.is_relative_to(root.resolve()) or _hash(file) != expected:
                 raise ValueError("规则文件与清单不一致")
@@ -43,6 +46,8 @@ class SkillBundle:
                 raise ValueError("角色 Skill 与清单不一致")
 
     def module(self, name: str) -> ModuleType:
+        if f"scripts/{name}.py" not in self.manifest["files"]:
+            raise ImportError(name)
         if name not in self._modules:
             spec = importlib.util.spec_from_file_location(
                 f"g2_{self.id}_{name}", self.root / "scripts" / f"{name}.py"
@@ -61,11 +66,15 @@ class SkillBundle:
         files = {
             f"/skills/g2-task-{role}/SKILL.md": (self.agents / role / "SKILL.md").read_text(encoding="utf-8"),
         }
-        # 上游正文的核心原则作为共享领域规则；交付与自我进化由角色 Skill 接管。
+        # 上游核心原则作为共享领域规则；交付与自我进化由系统处理。
         source = (self.root / "SKILL.md").read_text(encoding="utf-8")
-        files["/rules/SKILL.md"] = source.split("## 核心原则（始终执行）", 1)[1].split("**交付格式", 1)[0]
+        start = re.search(r"(?m)^## 核心原则[^\r\n]*\r?\n", source)
+        end = re.search(r"(?m)^(?:\d+\.\s*)?\*\*交付格式", source)
+        if not start or not end or end.start() <= start.end():
+            raise ApiError(500, "RULE_TOOL_FAILED", "规则文件缺少核心原则或交付格式边界")
+        files["/rules/SKILL.md"] = source[start.end():end.start()]
         for relative in self.manifest["files"]:
-            if relative.startswith(("references/", "scripts/", "assets/")):
+            if relative.startswith("references/") or relative == "assets/atomic_skills_catalog.csv":
                 files[f"/rules/{relative}"] = (self.root / relative).read_text(encoding="utf-8")
         return files
 
@@ -98,8 +107,15 @@ def freeze_bundle() -> SkillBundle:
             destination.parent.mkdir(parents=True, exist_ok=True)
             with TemporaryDirectory(prefix=current.id + "-", dir=destination.parent) as directory:
                 temporary = Path(directory)
-                shutil.copytree(current.root, temporary / "rules",
-                                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+                rules = temporary / "rules"
+                rules.mkdir()
+                shutil.copyfile(current.root / "MANIFEST.json", rules / "MANIFEST.json")
+                for relative in current.manifest["files"]:
+                    if relative in _HISTORY_ASSETS:
+                        continue
+                    target = rules / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(current.root / relative, target)
                 for role in ("generator", "reviewer"):
                     shutil.copytree(current.agents / role, temporary / role)
                 SkillBundle(temporary / "rules", temporary)
