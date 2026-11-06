@@ -1,6 +1,8 @@
 """批次 3B：作业（生成/重审/重写）、幂等、恢复与导出。"""
 from __future__ import annotations
 
+from tests.conftest import confirmation_evidence
+
 import time
 
 from app.agents.fake import FakeModelClient
@@ -456,6 +458,7 @@ def test_export_flow(client):
                 "expected_revision": d["summary"]["revision"],
                 "version_id": d["current_version"]["id"],
                 "decision": "approve",
+                "resolutions": confirmation_evidence(d),
             },
             headers={"Idempotency-Key": f"dec-{t['id']}"},
         )
@@ -519,6 +522,7 @@ def test_export_missing_file(client):
             "expected_revision": d["summary"]["revision"],
             "version_id": d["current_version"]["id"],
             "decision": "approve",
+                "resolutions": confirmation_evidence(d),
         },
         headers={"Idempotency-Key": "dec-e"},
     )
@@ -589,7 +593,7 @@ def test_export_formula_content_stays_text(client, monkeypatch):
         client.post(
             f"/api/v1/tasks/{t['id']}/decisions",
             json={"expected_revision": d["summary"]["revision"],
-                  "version_id": d["current_version"]["id"], "decision": "approve"},
+                  "version_id": d["current_version"]["id"], "decision": "approve", "resolutions": confirmation_evidence(d)},
             headers={"Idempotency-Key": f"dec-e-{t['id']}"},
         )
     ids = [t["id"] for t in tasks]

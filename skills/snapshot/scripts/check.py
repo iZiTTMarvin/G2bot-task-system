@@ -26,7 +26,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 from check_segment_overlap import find_overlaps, normalize  # noqa: E402
-from validate_tasks import load_ledger, resolve_step_limits, validate_row  # noqa: E402
+from validate_tasks import load_ledger, load_table, resolve_step_limits, validate_row  # noqa: E402
 from materials import compare_materials, materials_text  # noqa: E402
 
 
@@ -58,16 +58,10 @@ def load_rows(source):
     else:
         path = Path(source)
         suffix = path.suffix.lower()
-        if suffix == ".csv":
-            # Excel 在中文 Windows 上另存的 csv 常是 GBK
-            try:
-                text = path.read_text(encoding="utf-8-sig")
-            except UnicodeDecodeError:
-                text = path.read_text(encoding="gbk")
-            rows = list(csv.DictReader(io.StringIO(text, newline="")))
-        elif suffix in (".xlsx", ".xls"):
-            import pandas as pd
-            rows = pd.read_excel(path).fillna("").astype(str).to_dict("records")
+        if suffix in (".csv", ".xlsx"):
+            _, rows = load_table(path)
+        elif suffix == ".xls":
+            raise ValueError("不支持旧版 .xls，请另存为 .xlsx 或 CSV")
         else:
             rows = parse_text(path.read_text(encoding="utf-8"))
     for index, row in enumerate(rows, 1):

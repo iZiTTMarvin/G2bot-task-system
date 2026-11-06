@@ -1,4 +1,5 @@
 """本地 HTTP 服务验证 SDK 的实际协议、地址兼容性和完整工具往返。"""
+from tests.conftest import confirmation_evidence
 import json
 import threading
 from contextlib import contextmanager
@@ -165,9 +166,15 @@ def test_api_job_uses_both_deep_agents_and_keeps_human_approval(client, monkeypa
     approved = client.post(
         f"/api/v1/tasks/{summary['id']}/decisions",
         json={"expected_revision": summary["revision"],
-              "version_id": detail["current_version"]["id"], "decision": "approve"},
+              "version_id": detail["current_version"]["id"], "decision": "approve",
+              "resolutions": confirmation_evidence(detail)},
         headers={"Idempotency-Key": "sdk-approve"},
     )
     assert approved.status_code == 201
     evidence = list((CONFIG.data_dir / "agent-traces" / run["id"]).glob("*.jsonl"))
     assert len(evidence) == 2
+    events = [json.loads(line) for trace in evidence for line in trace.read_text(encoding='utf-8').splitlines()]
+    assert sum(event['event'] == 'model_call_started' for event in events) == len(received)
+    completed = [event for event in events if event['event'] == 'model_call_finished']
+    assert len(completed) == len(received)
+    assert all(not event['failed'] and event['elapsed_seconds'] >= 0 for event in completed)

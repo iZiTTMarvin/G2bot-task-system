@@ -705,20 +705,33 @@ def validate_row(row, min_steps, max_steps, ledger_sigs, recommended_min_steps=N
 
 def load_table(path: Path):
     if path.suffix.lower() == ".csv":
-        import pandas as pd
-        return pd.read_csv(path).fillna("")
-    import pandas as pd
-    return pd.read_excel(path).fillna("")
+        try:
+            text = path.read_text(encoding="utf-8-sig")
+        except UnicodeDecodeError:
+            text = path.read_text(encoding="gbk")
+        import io
+        reader = csv.DictReader(io.StringIO(text, newline=""))
+        return list(reader.fieldnames or []), list(reader)
+    if path.suffix.lower() != ".xlsx":
+        raise ValueError("仅支持 CSV 和 XLSX，旧版 XLS 请先另存")
+    from openpyxl import load_workbook
+    book = load_workbook(path, read_only=True, data_only=False)
+    try:
+        values = list(book.active.iter_rows(values_only=True))
+        headers = [str(v or "") for v in values[0]] if values else []
+        rows = [dict(zip(headers, ("" if v is None else str(v) for v in row)))
+                for row in values[1:] if any(v is not None for v in row)]
+        return headers, rows
+    finally:
+        book.close()
 
 
 def load_ledger(path: Path):
-    import pandas as pd
-    reader = pd.read_csv if path.suffix.lower() == ".csv" else pd.read_excel
-    df = reader(path, usecols=lambda column: column in {"任务名称", "任务名字"}, dtype=str).fillna("")
-    if "任务名称" not in df.columns and "任务名字" not in df.columns:
+    headers, rows = load_table(path)
+    if "任务名称" not in headers and "任务名字" not in headers:
         raise ValueError("历史表缺少『任务名称』或『任务名字』列，无法比较名称")
     return [{"name": str(r.get("任务名称", r.get("任务名字", ""))).strip(), "history": True}
-            for _, r in df.iterrows()]
+            for r in rows]
 
 
 def main():
@@ -733,22 +746,22 @@ def main():
     if min_steps < 1 or (max_steps is not None and max_steps < min_steps):
         ap.error("步数下限须为正数，上限不得小于下限")
 
-    df = load_table(Path(args.tasks))
+    headers, rows = load_table(Path(args.tasks))
     required = {"任务名称", "任务步骤"}
-    missing = required - set(df.columns)
+    missing = required - set(headers)
     if missing:
-        print(f"[FATAL] 任务表缺少必需列：{missing}，当前列为：{list(df.columns)}")
+        print(f"[FATAL] 任务表缺少必需列：{missing}，当前列为：{headers}")
         sys.exit(2)
 
     ledger = load_ledger(Path(args.ledger)) if args.ledger else []
-    print(f"本批任务 {len(df)} 条")
+    print(f"本批任务 {len(rows)} 条")
     if args.ledger:
         print(f"已读取指定表格的任务名称 {len(ledger)} 条")
     print()
 
     block_cnt = warn_cnt = pass_cnt = 0
     skill_family = {}
-    for idx, row in df.iterrows():
+    for idx, row in enumerate(rows):
         seq = row.get("序号", idx + 1)
         issues, fp, skills = validate_row(row, min_steps, max_steps, ledger, recommended)
         blocks = [i for i in issues if i[0] == "BLOCK"]
@@ -772,7 +785,7 @@ def main():
             print(f"[通过]   序号{seq}  {fp['name']}")
 
     print("\n" + "=" * 60)
-    print(f"汇总：通过 {pass_cnt}，有警告 {warn_cnt}，不通过 {block_cnt}，共 {len(df)} 条")
+    print(f"汇总：通过 {pass_cnt}，有警告 {warn_cnt}，不通过 {block_cnt}，共 {len(rows)} 条")
     if skill_family:
         top = sorted(skill_family.items(), key=lambda x: -x[1])[:10]
         print("命中技能词频 Top10：", "，".join(f"{k}×{v}" for k, v in top))

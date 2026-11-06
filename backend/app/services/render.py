@@ -7,6 +7,7 @@ from typing import Any
 
 from ..prompts_spec import STATUS_STAGE, TASK_STATUSES
 from . import batch_checks
+from ..tools.quality import batch_inventory, quality_issues
 
 
 def _j(value: str | None, default: Any) -> Any:
@@ -25,6 +26,7 @@ def render_attachment(row: sqlite3.Row, *, include_text: bool) -> dict[str, Any]
     }
     if include_text:
         out["parsed_text"] = row["parsed_text"]
+        out['inventory'] = _j(row['inventory_json'], [])
     return out
 
 
@@ -66,6 +68,7 @@ def render_batch(conn: sqlite3.Row | sqlite3.Connection, row: sqlite3.Row) -> di
         "task_mode": row["task_mode"],
         "reference_text": row["reference_text"],
         "attachment_ids": _j(row["attachment_ids_json"], []),
+        "material_snapshot": _j(row['material_snapshot_json'], []),
         "rule_snapshot_id": row["rule_snapshot_id"],
         "task_counts": _task_counts(conn_, batch_id=batch_id, name_like=None),
         "latest_run_id": latest["id"] if latest else None,
@@ -104,6 +107,7 @@ def render_version(row: sqlite3.Row) -> dict[str, Any]:
         "author_type": row["author_type"],
         "content": _j(row["content_json"], {}),
         "change_note": row["change_note"],
+        "change_category": row['change_category'],
         "validation": _j(row["validation_json"], {}),
         "run_id": row["run_id"],
         "created_at": row["created_at"],
@@ -131,6 +135,8 @@ def render_decision(row: sqlite3.Row) -> dict[str, Any]:
         "task_version_id": row["task_version_id"],
         "decision": row["decision"],
         "reason": row["reason"],
+        "resolutions": _j(row['resolutions_json'], {}),
+        "change_category": row['change_category'],
         "created_at": row["created_at"],
     }
 
@@ -168,9 +174,14 @@ def render_task_detail(conn: sqlite3.Connection, task_row: sqlite3.Row) -> dict[
     summary = render_task_summary(task_row, findings)
     summary["human_edited"] = version is not None and version["author_type"] == "human"
     latest_review = render_review(review) if review else None
+    current = render_version(version)
+    current['validation'] = current_validation(conn, task_row, version)
+    decision = conn.execute('SELECT * FROM decisions WHERE task_id=? ORDER BY created_at DESC, id DESC LIMIT 1',
+                            (task_row['id'],)).fetchone()
     return {
         "summary": summary,
-        "current_version": render_version(version),
+        "current_version": current,
+        "latest_decision": render_decision(decision) if decision else None,
         "latest_review": latest_review,
         "batch_issues": findings,
         "last_error": _j(task_row["last_error_json"], None),
@@ -180,3 +191,15 @@ def render_task_detail(conn: sqlite3.Connection, task_row: sqlite3.Row) -> dict[
             review and review["task_version_id"] == task_row["current_version_id"]
         ),
     }
+
+
+def current_validation(conn: sqlite3.Connection, task: sqlite3.Row, version: sqlite3.Row) -> dict[str, Any]:
+    """旧版报告保持原样，当前门禁补充新引入的证据检查。"""
+    report = _j(version['validation_json'], {})
+    issues = report['issues']
+    codes = {item['code'] for item in issues}
+    content = _j(version['content_json'], {})
+    issues.extend(item for item in quality_issues(content, batch_inventory(conn, task['batch_id']))
+                  if item['code'] not in codes)
+    report['status'] = 'failed' if any(i['severity'] == 'error' for i in issues) else 'passed'
+    return report

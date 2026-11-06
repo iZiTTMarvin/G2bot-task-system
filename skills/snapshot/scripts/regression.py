@@ -300,8 +300,15 @@ def run_history_cli_checks(sample):
 
         obsolete = ("assets/delivered_tasks.txt", "assets/existing_tasks_feishu.txt",
                     "assets/ledger_template.csv", "scripts/lookup_history.py", "scripts/build_ledger.py")
-        expect("技能目录内没有历史数据和旧查询入口",
-               all(not (SCRIPT_DIR.parent / item).exists() for item in obsolete))
+        manifest_path = SCRIPT_DIR.parent / "MANIFEST.json"
+        if manifest_path.exists():
+            import json
+            managed = json.loads(manifest_path.read_text(encoding="utf-8"))["files"]
+            expect("生效清单不包含历史数据和旧查询入口",
+                   not any(item in managed for item in obsolete))
+        else:
+            expect("独立技能目录没有历史数据和旧查询入口",
+                   all(not (SCRIPT_DIR.parent / item).exists() for item in obsolete))
         overlap_help = run(SCRIPT_DIR / "check_segment_overlap.py", "--help")
         expect("连续段工具不提供历史步骤查询入口",
                overlap_help.returncode == 0 and "--history" not in overlap_help.stdout)

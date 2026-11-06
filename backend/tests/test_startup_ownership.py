@@ -42,10 +42,10 @@ def test_data_lock_is_visible_to_other_processes(tmp_path):
     )
     with lock_data_dir(tmp_path):
         blocked = subprocess.run([sys.executable, '-c', code, str(tmp_path)],
-                                 capture_output=True, timeout=15)
+                                 capture_output=True, timeout=15, cwd=Path(__file__).resolve().parents[1])
     assert blocked.returncode != 0
     released = subprocess.run([sys.executable, '-c', code, str(tmp_path)],
-                              capture_output=True, timeout=15)
+                              capture_output=True, timeout=15, cwd=Path(__file__).resolve().parents[1])
     assert released.returncode == 0
 
 

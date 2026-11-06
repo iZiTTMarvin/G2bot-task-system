@@ -13,18 +13,18 @@
     "references/06-brief.md": "aa3a79365e91760bcd057e93a2fe6a437bd533545f49fdcb727106160bd2c478",
     "references/06-learned-rules.md": "d0195ee57f21b64fb4dcbbaa39bc50479fbcf1fe9eff799af59602572c6deb84",
     "references/07-evolution.md": "823f8830bcbdb0b83614917d186db0f768780e2852e586915016107b7625aca6",
-    "scripts/check.py": "372b4edbbc11b45c0473418a41b5a13a455a1dbd3e53754e76fc922f0bc7bc8b",
+    "scripts/check.py": "165a8d84a69575da56c270dfaeeb1852ccee602e86aa56a79490fe6176c0e21f",
     "scripts/check_segment_overlap.py": "e2f37847ab7b5a4b9750ef5e0803f0262d760c21e06bec54fc48798476ced2c8",
     "scripts/export_xlsx.py": "f9fc4065fbf4668ff78488b84eee8ccf600cfe4b5f93e2ea9b18e5749d832081",
     "scripts/learn.py": "df0a1694878bee92ec69d8ac207d6454e79ad8ff8509bcba24c18faa9ec38ce7",
     "scripts/materials.py": "223b195c7127fcfc11418024dc72823ee4e3d7f9a9dd7344526f0488df083f05",
-    "scripts/regression.py": "203440fafa9a9b94ab714bf16d7ab69d2695aa231658d6c8dd866d5a1c53d92d",
+    "scripts/regression.py": "507919819a9d41ae5c9929b7d856cad9bcf3ee209d6d7b556d260411aafc2f42",
     "scripts/segment_overlap_regression.py": "c6958e2218ad700ff4ceefb974789acc41c6ee70a9f798203e1356a1879077b3",
-    "scripts/validate_tasks.py": "98f73da4f217522b99f256fe03577ab1a5a4b5843b05fc069bbffb1b76e48825"
+    "scripts/validate_tasks.py": "a2af1c821a4a8d6ae01971baf946339c2f29dfc471d93962426a972ff2d9ac9e"
   },
   "agent_files": {
     "generator/SKILL.md": "e576bcd71b85ff4e52962feaf3c04e1e7732cbafe0954b3b2415b2f0bd2fdbc2",
     "reviewer/SKILL.md": "6da8ecb565b4c6d8726804c85044c8e7567022d9654cc7e78b8406b0ae08b812"
   },
-  "rule_snapshot_id": "rs_1b5a8d303fe3b4cd"
+  "rule_snapshot_id": "rs_b37bc9bf8e37aebb"
 }

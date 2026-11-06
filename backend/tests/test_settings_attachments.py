@@ -12,7 +12,7 @@ def test_health(client):
     r = client.get("/api/v1/health")
     assert r.status_code == 200
     body = r.json()
-    assert body == {"status": "ok", "database": "ok", "contract_version": "0.2.0"}
+    assert body == {"status": "ok", "database": "ok", "contract_version": "0.3.0"}
     assert r.headers.get("x-request-id", "").startswith("req_")
 
 

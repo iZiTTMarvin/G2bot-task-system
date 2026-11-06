@@ -20,6 +20,7 @@ from ..errors import (
 )
 from ..prompts_spec import TASK_STATUSES
 from ..tools import validation as rule_tools
+from ..tools.quality import batch_inventory
 from . import batch_checks
 from . import render
 
@@ -199,7 +200,8 @@ def insert_version(
     now = db.utcnow()
     version_id = ids.new_id("ver")
     version_no = task_row["current_version_no"] + 1
-    report = rule_tools.validate_content(content, task_mode, snapshot_id)
+    report = rule_tools.validate_content(content, task_mode, snapshot_id,
+                                         inventory=batch_inventory(conn, task_row['batch_id']))
     conn.execute(
         "INSERT INTO task_versions (id, task_id, version_no, parent_version_id, author_type,"
         " content_json, change_note, validation_json, run_id, created_at)"
@@ -245,7 +247,8 @@ def create_adhoc_task(
     ).fetchone()["n"]
     task_id = ids.new_id("task")
     version_id = ids.new_id("ver")
-    report = rule_tools.validate_content(content, task_mode, snapshot_id)
+    report = rule_tools.validate_content(content, task_mode, snapshot_id,
+                                         inventory=batch_inventory(conn, batch_id))
     now = db.utcnow()
     conn.execute(
         "INSERT INTO task_versions (id, task_id, version_no, parent_version_id,"
@@ -286,6 +289,7 @@ def save_version(
     content: dict[str, Any],
     change_note: str,
     finish: FinishFn | None = None,
+    change_category: str = 'other',
 ) -> dict[str, Any]:
     normalized = normalize_content(content)  # 结构错误在事务外拒绝
     with db.tx() as conn:
@@ -312,6 +316,8 @@ def save_version(
             snapshot_id=batch["rule_snapshot_id"],
             task_mode=batch["task_mode"],
         )
+        conn.execute('UPDATE task_versions SET change_category=? WHERE task_id=? AND version_no=?',
+                     (change_category, task_id, task['current_version_no'] + 1))
         # 改过的任务必须重新确认：已通过的退回待确认，被驳回的重新进入待确认
         if task["status"] in {"approved", "rejected"}:
             conn.execute(
@@ -341,6 +347,8 @@ def decide(
     decision: str,
     reason: str,
     finish: FinishFn | None = None,
+    resolutions: dict[str, str] | None = None,
+    change_category: str = 'other',
 ) -> dict[str, Any]:
     reason = (reason or "").strip()
     if decision == "reject" and not reason:
@@ -359,17 +367,24 @@ def decide(
                 {"version_id": version_id, "current_version_id": task["current_version_id"]},
             )
         if decision == "approve":
-            report = conn.execute(
-                "SELECT validation_json FROM task_versions WHERE id=?",
+            version = conn.execute(
+                "SELECT * FROM task_versions WHERE id=?",
                 (task["current_version_id"],),
             ).fetchone()
-            status = _json_loads(report["validation_json"])["status"]
-            if status != "passed":
+            current = render.current_validation(conn, task, version)
+            if current['status'] != "passed":
                 raise rule_gate_failed()
             findings = batch_checks.current_issues(conn, task["batch_id"]).get(task_id, [])
             duplicate = next((item for item in findings if item["severity"] == "error"), None)
             if duplicate:
                 raise ApiError(422, "RULE_GATE_FAILED", duplicate["message"] + "，请先调整任务。")
+            required = {item['code'] for item in current['issues'] if item['severity'] == 'review_required'}
+            resolutions = resolutions or {}
+            if (set(resolutions) != required or
+                    any(not isinstance(note, str) or not 1 <= len(note.strip()) <= 2000
+                        for note in resolutions.values())):
+                raise ApiError(422, 'REVIEW_REQUIRED', '请逐项填写核验依据后确认当前版本',
+                               {'required_codes': sorted(required)})
         now = db.utcnow()
         decision_id = ids.new_id("dec")
         conn.execute(
@@ -377,6 +392,8 @@ def decide(
             " VALUES (?,?,?,?,?,?)",
             (decision_id, task_id, version_id, decision, reason, now),
         )
+        conn.execute('UPDATE decisions SET resolutions_json=?, change_category=? WHERE id=?',
+                     (db_json(resolutions or {}), change_category, decision_id))
         conn.execute(
             "UPDATE tasks SET status=?, revision=revision+1, updated_at=? WHERE id=?",
             ("approved" if decision == "approve" else "rejected", now, task_id),

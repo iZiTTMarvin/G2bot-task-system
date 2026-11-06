@@ -54,7 +54,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="G2 Task System Demo API",
-        version="0.1.0",
+        version="0.3.0",
         docs_url="/api/docs",
         lifespan=lifespan,
     )

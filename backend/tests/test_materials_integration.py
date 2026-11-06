@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.conftest import confirmation_evidence
+
 import io
 
 import pytest
@@ -71,7 +73,8 @@ def test_numbered_materials_flow_through_review_and_export(client, monkeypatch):
     decision = client.post(
         f"/api/v1/tasks/{task['id']}/decisions",
         json={"expected_revision": detail["summary"]["revision"],
-              "version_id": detail["current_version"]["id"], "decision": "approve"},
+              "version_id": detail["current_version"]["id"], "decision": "approve",
+              "resolutions": confirmation_evidence(detail)},
         headers={"Idempotency-Key": "numbered-material-decision"},
     )
     assert decision.status_code == 201

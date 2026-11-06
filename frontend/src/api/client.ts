@@ -6,6 +6,7 @@ import type {
   Batch,
   BatchPage,
   ChatMessage,
+  ChangeCategory,
   Conversation,
   ConversationPage,
   ConversationTasks,
@@ -36,6 +37,7 @@ export interface BatchCreateInput {
 export interface SendMessageInput {
   content?: string;
   attachment_ids?: string[];
+  attachment_mode?: 'inherit' | 'replace' | 'append' | 'clear';
   task_ids?: string[];
   pasted_text?: string;
 }
@@ -90,7 +92,7 @@ export interface ApiClient {
   listVersions(taskId: string): Promise<VersionList>;
   saveVersion(
     taskId: string,
-    payload: { expected_revision: number; content: TaskContent; change_note?: string },
+    payload: { expected_revision: number; content: TaskContent; change_note?: string; change_category?: ChangeCategory },
     key: string
   ): Promise<TaskDetail>;
   listReviews(taskId: string): Promise<ReviewList>;
@@ -102,6 +104,8 @@ export interface ApiClient {
       version_id: string;
       decision: 'approve' | 'reject';
       reason?: string;
+      resolutions?: Record<string, string>;
+      change_category?: ChangeCategory;
     },
     key: string
   ): Promise<DecisionResult>;
@@ -117,7 +121,7 @@ export interface ApiClient {
   ): Promise<Run>;
 
   createExport(
-    payload: { batch_id: string; task_ids: string[] },
+    payload: { batch_id: string; task_ids: string[]; intent?: 'draft' | 'delivery' },
     key: string
   ): Promise<ExportRecord>;
   downloadExport(url: string): Promise<Blob>;

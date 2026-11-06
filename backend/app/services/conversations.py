@@ -123,6 +123,7 @@ def _render_conversation(conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str
         "id": row["id"],
         "agent_role": row["agent_role"],
         "title": row["title"],
+        "attachment_ids": _loads(row['attachment_ids_json'], []),
         "message_count": stats["n"] or 0,
         "task_count": task_count,
         "created_at": row["created_at"],
@@ -259,19 +260,33 @@ def post_agent_message(run_id: str, text: str) -> None:
 
 
 def history_text(conn: sqlite3.Connection, conversation_id: str) -> str:
-    """最近若干轮对话，作为下一次生成的上下文（限制长度，避免撑爆 prompt）。"""
+    """保留全部用户要求与最近回复；超限由批次入口明确拒绝，不静默截断要求。"""
     rows = conn.execute(
-        "SELECT role, content FROM messages WHERE conversation_id=?"
-        " ORDER BY created_at DESC, id DESC LIMIT ?",
-        (conversation_id, HISTORY_TURNS * 2),
+        "SELECT role, content FROM messages WHERE conversation_id=? AND (role='user' OR id IN ("
+        "SELECT id FROM messages WHERE conversation_id=? AND role='agent' "
+        "ORDER BY created_at DESC, id DESC LIMIT ?)) ORDER BY created_at ASC, id ASC",
+        (conversation_id, conversation_id, HISTORY_TURNS),
     ).fetchall()
     lines = []
-    for row in reversed(rows):
+    for row in rows:
         who = "我" if row["role"] == "user" else "Agent"
         text = (row["content"] or "").strip()
         if not text:
             continue
-        lines.append(f"{who}：{text[:400]}")
+        lines.append(f"{who}：{text}")
+    tasks = conn.execute(
+        'SELECT t.name, t.status, v.content_json FROM tasks t JOIN batches b ON b.id=t.batch_id '
+        'JOIN task_versions v ON v.id=t.current_version_id WHERE b.conversation_id=? '
+        'ORDER BY t.created_at DESC, t.id DESC LIMIT 30', (conversation_id,),
+    ).fetchall()
+    if tasks:
+        lines.append('本会话最近 30 条当前任务摘要（供延续与去重，非完整历史）：')
+        for task in tasks:
+            content = json.loads(task['content_json'])
+            lines.append(json.dumps({'name': task['name'], 'status': task['status'],
+                                     'materials': content['materials'],
+                                     'initial': content['steps'][0][:160],
+                                     'terminal': content['steps'][-1][:160]}, ensure_ascii=False))
     return "\n".join(lines)
 
 

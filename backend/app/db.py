@@ -181,16 +181,29 @@ def init_db() -> None:
     conn.commit()
 
 
-def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> bool:
     existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
     if column not in existing:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+        return True
+    return False
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
     """旧库增量升级：只加列，不改既有数据。"""
     _ensure_column(conn, "batches", "conversation_id", "TEXT")
     _ensure_column(conn, "batches", "task_mode_default", "TEXT")
+    _ensure_column(conn, "batches", "material_snapshot_json", "TEXT NOT NULL DEFAULT '[]'")
+    _ensure_column(conn, "attachments", "inventory_json", "TEXT NOT NULL DEFAULT '[]'")
+    if _ensure_column(conn, "conversations", "attachment_ids_json", "TEXT NOT NULL DEFAULT '[]'"):
+        conn.execute("UPDATE conversations SET attachment_ids_json=COALESCE(("
+                     "SELECT b.attachment_ids_json FROM batches b WHERE b.conversation_id=conversations.id "
+                     "AND b.attachment_ids_json!='[]' ORDER BY b.created_at DESC, b.id DESC LIMIT 1), '[]') "
+                     "WHERE agent_role='generator'")
+    _ensure_column(conn, "task_versions", "change_category", "TEXT NOT NULL DEFAULT 'other'")
+    _ensure_column(conn, "decisions", "resolutions_json", "TEXT NOT NULL DEFAULT '{}'")
+    _ensure_column(conn, "decisions", "change_category", "TEXT NOT NULL DEFAULT 'other'")
+    _ensure_column(conn, "exports", "intent", "TEXT NOT NULL DEFAULT 'draft'")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_batches_conversation ON batches(conversation_id)"
     )

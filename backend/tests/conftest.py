@@ -80,3 +80,10 @@ def generate(client: TestClient, batch_id: str, key: str = "kg") -> dict:
 
 def generated_tasks(client: TestClient) -> list[dict]:
     return client.get("/api/v1/tasks", params={"page_size": 50}).json()["items"]
+
+
+def confirmation_evidence(detail: dict) -> dict[str, str]:
+    """模拟人工逐项核验；仅用于需要成功确认的接口用例。"""
+    return {item['code']: '测试现场已按该项核对，物料与初终态符合要求'
+            for item in detail['current_version']['validation']['issues']
+            if item['severity'] == 'review_required'}

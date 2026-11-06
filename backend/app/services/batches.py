@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from typing import Any
 
 from .. import db, ids
@@ -38,6 +39,7 @@ def create(
     attachment_ids: list[str],
     conversation_id: str | None = None,
     finish=None,
+    connection=None,
 ) -> dict[str, Any]:
     name = (name or "").strip()
     goal = goal.strip()
@@ -52,6 +54,11 @@ def create(
 
     texts = attachments_service.get_texts(attachment_ids)
     frozen = "\n\n".join(texts[a] for a in attachment_ids)
+    inventory = []
+    for attachment_id in attachment_ids:
+        inventory.extend(attachments_service.get_attachment(attachment_id)['inventory'])
+    if inventory:
+        frozen += '\n\n结构化物料快照（缺失字段须核验，不得补造）：\n' + json.dumps(inventory, ensure_ascii=False)
     total_context = len(reference_text) + len(frozen)
     if total_context > MAX_BATCH_CONTEXT:
         raise ApiError(
@@ -63,7 +70,7 @@ def create(
 
     batch_id = ids.new_id("batch")
     now = db.utcnow()
-    with db.tx() as conn:
+    with (nullcontext(connection) if connection is not None else db.tx()) as conn:
         snapshot_id = _ensure_rule_snapshot(conn)
         conn.execute(
             "INSERT INTO batches (id, name, goal, task_count, task_mode, reference_text,"
@@ -84,6 +91,8 @@ def create(
                 conversation_id,
             ),
         )
+        conn.execute('UPDATE batches SET material_snapshot_json=? WHERE id=?',
+                     (json.dumps(inventory, ensure_ascii=False), batch_id))
         row = conn.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
         payload = render.render_batch(conn, row)
         if finish:
@@ -128,4 +137,5 @@ def get_snapshot(batch_row: Any) -> dict[str, Any]:
         "reference_text": batch_row["reference_text"] or "",
         "attachments_text": batch_row["attachments_text"] or "",
         "rule_snapshot_id": batch_row["rule_snapshot_id"],
+        "material_snapshot": json.loads(batch_row['material_snapshot_json']),
     }

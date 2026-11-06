@@ -14,7 +14,7 @@ from ..api.schemas import MaterialIn, StrictModel
 from ..errors import ApiError
 from ..tools.skill_bundle import SkillBundle
 from ..tools.validation import batch_issues, compare_batch, evaluate_step_matches, steps_to_text, validate_content
-from .trace import AgentTrace
+from .trace import AgentTrace, current_inventory
 
 
 def task_digest(tasks: list[dict]) -> str:
@@ -39,6 +39,7 @@ class TaskTools:
         self.bundle = bundle
         self.task_mode = task_mode
         self.trace = trace
+        self.inventory = current_inventory()
         self.checked: dict[str, list[dict]] = {}
         self.check_count = 0
         self._check_lock = threading.Lock()
@@ -72,7 +73,8 @@ class TaskTools:
                         {"name": name, "quantity": count}
                         for name, count in materials.derive_materials(steps_to_text(content["steps"]))
                     ]
-            reports = [validate_content(t, self.task_mode, self.bundle.id, bundle=self.bundle)
+            reports = [validate_content(t, self.task_mode, self.bundle.id, bundle=self.bundle,
+                                        inventory=self.inventory)
                        for t in contents]
             for content, report in zip(contents, reports):
                 if not content["materials"]:

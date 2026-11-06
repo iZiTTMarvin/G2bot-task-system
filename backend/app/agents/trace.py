@@ -10,17 +10,24 @@ from .. import db
 
 _RUN_ID: ContextVar[str | None] = ContextVar("agent_run_id", default=None)
 _SNAPSHOT_ID: ContextVar[str | None] = ContextVar("agent_snapshot_id", default=None)
+_INVENTORY: ContextVar[list[dict] | None] = ContextVar('agent_inventory', default=None)
 
 
 @contextmanager
-def trace_run(run_id: str, snapshot_id: str):
+def trace_run(run_id: str, snapshot_id: str, inventory: list[dict] | None = None):
     token = _RUN_ID.set(run_id)
     snapshot_token = _SNAPSHOT_ID.set(snapshot_id)
+    inventory_token = _INVENTORY.set(inventory)
     try:
         yield
     finally:
         _RUN_ID.reset(token)
         _SNAPSHOT_ID.reset(snapshot_token)
+        _INVENTORY.reset(inventory_token)
+
+
+def current_inventory() -> list[dict] | None:
+    return _INVENTORY.get()
 
 
 def current_snapshot() -> str | None:

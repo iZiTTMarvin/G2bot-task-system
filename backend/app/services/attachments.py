@@ -15,6 +15,8 @@ from .. import db, ids
 from ..config import CONFIG
 from ..errors import ApiError, not_found
 from . import render
+from ..tools.quality import parse_inventory
+import json
 
 MAX_FILE_BYTES = 5 * 1024 * 1024
 MAX_PARSED_CHARS = 50_000
@@ -118,6 +120,7 @@ def _xlsx_to_text(data: bytes) -> str:
 def upload(filename: str, data: bytes) -> dict[str, Any]:
     media, text = parse_bytes(filename, data)
     attachment_id = ids.new_id("att")
+    inventory = parse_inventory(filename, data, attachment_id)
     safe_suffix = ".xlsx" if filename.lower().endswith(".xlsx") else ".bin"
     file_path = CONFIG.attachments_dir / f"{attachment_id}{safe_suffix}"
     file_path.write_bytes(data)
@@ -138,6 +141,8 @@ def upload(filename: str, data: bytes) -> dict[str, Any]:
                 now,
             ),
         )
+        conn.execute('UPDATE attachments SET inventory_json=? WHERE id=?',
+                     (json.dumps(inventory, ensure_ascii=False), attachment_id))
     row = db.get_conn().execute(
         "SELECT * FROM attachments WHERE id=?", (attachment_id,)
     ).fetchone()

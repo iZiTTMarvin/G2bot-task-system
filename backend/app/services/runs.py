@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from contextlib import nullcontext
 from typing import Any, Callable
 
 from .. import db, ids
@@ -27,6 +28,7 @@ from ..errors import (
 )
 from ..prompts_spec import GENERATOR_ID, REVIEWER_ID, TASK_STATUSES
 from ..tools import validation as rule_tools
+from ..tools.quality import batch_inventory
 from . import batches as batches_service
 from . import batch_checks
 from . import render
@@ -105,11 +107,11 @@ def _config_snapshot() -> dict[str, Any]:
 
 # ---------- 入队 ----------
 
-def start_generate(batch_id: str, *, finish: FinishFn | None = None) -> dict[str, Any]:
+def start_generate(batch_id: str, *, finish: FinishFn | None = None, connection=None) -> dict[str, Any]:
     from . import settings as settings_service
 
     settings_service.require_model_config()
-    with db.tx() as conn:
+    with (nullcontext(connection) if connection is not None else db.tx()) as conn:
         batch = conn.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
         if batch is None:
             raise not_found("批次")
@@ -351,7 +353,8 @@ def _review_flow(run_id: str, task_id: str, *, reference_text: str) -> int:
         "SELECT * FROM task_versions WHERE id=?", (task["current_version_id"],)
     ).fetchone()
     batch = conn.execute("SELECT * FROM batches WHERE id=?", (task["batch_id"],)).fetchone()
-    report = json.loads(version["validation_json"])
+    report = rule_tools.validate_content(json.loads(version['content_json']), batch['task_mode'],
+                                         batch['rule_snapshot_id'], inventory=batch_inventory(conn, batch['id']))
     _set_task_status(task_id, "ai_reviewing", bump_revision=False)
     client = get_client()
     try:
@@ -362,7 +365,7 @@ def _review_flow(run_id: str, task_id: str, *, reference_text: str) -> int:
                             + json.dumps(report["issues"], ensure_ascii=False))
         if peers:
             review_reference += "\n\n同批其他当前任务（仅供比较）：\n" + json.dumps(peers, ensure_ascii=False)
-        with trace_run(run_id, batch["rule_snapshot_id"]):
+        with trace_run(run_id, batch["rule_snapshot_id"], batch_inventory(conn, batch['id'])):
             result = client.review_task(
                 content=json.loads(version["content_json"]),
                 task_mode=batch["task_mode"], reference_text=review_reference,
@@ -375,7 +378,8 @@ def _review_flow(run_id: str, task_id: str, *, reference_text: str) -> int:
                 raise ModelCallError("MODEL_PROTOCOL_ERROR", exc.message) from exc
             if optimized != json.loads(version["content_json"]):
                 candidate = rule_tools.validate_content(
-                    optimized, batch["task_mode"], batch["rule_snapshot_id"]
+                    optimized, batch["task_mode"], batch["rule_snapshot_id"],
+                    inventory=batch_inventory(conn, batch['id']),
                 )
                 if report["status"] == "passed" and candidate["status"] != "passed":
                     reason = next(i["message"] for i in candidate["issues"] if i["severity"] == "error")
@@ -681,21 +685,6 @@ def _execute_task_run(run_id: str) -> None:
         _update_run(run_id, stage="reviewing")
     else:
         _update_run(run_id, stage="validating")
-        version = conn.execute(
-            "SELECT * FROM task_versions WHERE id=?", (task["current_version_id"],)
-        ).fetchone()
-        report = rule_tools.validate_content(
-            json.loads(version["content_json"]),
-            snapshot["task_mode"],
-            snapshot["rule_snapshot_id"],
-        )
-        if json.dumps(report, ensure_ascii=False) != version["validation_json"]:
-            # 版本报告原则上不可变；快照脚本变化导致结果不同才更新
-            with db.tx() as c:
-                c.execute(
-                    "UPDATE task_versions SET validation_json=? WHERE id=?",
-                    (json.dumps(report, ensure_ascii=False), version["id"]),
-                )
         _update_run(run_id, stage="reviewing")
 
     failed = _review_flow(run_id, task_id, reference_text=reference)
@@ -768,7 +757,8 @@ def execute_queued_run(run_id: str) -> None:
     if row is None:
         return
     try:
-        with trace_run(run_id, row["rule_snapshot_id"]):
+        run = db.get_conn().execute('SELECT batch_id FROM runs WHERE id=?', (run_id,)).fetchone()
+        with trace_run(run_id, row["rule_snapshot_id"], batch_inventory(db.get_conn(), run['batch_id'])):
             if row["kind"] == "generate_batch":
                 _execute_generate_batch(run_id)
             elif row["kind"] == "review_batch":

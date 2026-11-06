@@ -1,4 +1,4 @@
-"""导出：同批已通过任务 → 三列 XLSX。
+"""导出：同批草稿或已核验交付任务 → 五列 XLSX。
 
 - 按任务创建顺序输出；所有单元格写字符串（openpyxl 字符串单元格不会成为公式）。
 - 临时文件 + 原子改名；DB 记录在文件就位后写入。
@@ -32,14 +32,16 @@ STATUS_TEXT = {
 
 def _review_cell(conn: Any, task_id: str, batch_issues: list[dict[str, Any]]) -> str:
     row = conn.execute(
-        "SELECT verdict, summary, issues_json FROM reviews WHERE task_id=?"
+        "SELECT verdict, summary, issues_json, task_version_id FROM reviews WHERE task_id=?"
         " ORDER BY created_at DESC, id DESC LIMIT 1",
         (task_id,),
     ).fetchone()
     parts = []
     issues = []
     if row is not None:
-        parts.append(f"AI审核：{'通过' if row['verdict'] == 'pass' else '有问题'}｜{row['summary']}")
+        current = conn.execute('SELECT current_version_id FROM tasks WHERE id=?', (task_id,)).fetchone()
+        prefix = 'AI审核（历史版本）' if row['task_version_id'] != current['current_version_id'] else 'AI审核'
+        parts.append(f"{prefix}：{'通过' if row['verdict'] == 'pass' else '有问题'}｜{row['summary']}")
         try:
             issues = __import__("json").loads(row["issues_json"])
         except ValueError:
@@ -66,13 +68,26 @@ def create_export(
     batch_id: str,
     task_ids: list[str],
     finish: Callable[[Any, int, Any], None] | None = None,
+    intent: str = 'draft',
 ) -> dict[str, Any]:
+    # 选版本、检查确认记录和写导出记录共用写事务，避免导出期间版本被修改。
+    payload = None
+    try:
+        with db.tx() as conn:
+            payload = _create_export(conn, batch_id=batch_id, task_ids=task_ids, finish=finish, intent=intent)
+        return payload
+    except Exception:
+        if payload is not None:
+            (CONFIG.exports_dir / payload['filename']).unlink(missing_ok=True)
+        raise
+
+
+def _create_export(conn, *, batch_id, task_ids, finish, intent):
     if not task_ids:
         raise invalid_state("至少选择一个任务")
     if len(set(task_ids)) != len(task_ids):
         raise invalid_state("任务列表存在重复")
 
-    conn = db.get_conn()
     batch = conn.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
     if batch is None:
         raise not_found("批次")
@@ -94,27 +109,52 @@ def create_export(
 
     ordered = sorted(rows, key=lambda r: (r["created_at"], r["seq"]))
     version_rows = []
+    batch_findings = batch_checks.current_issues(conn, batch_id)
     for task in ordered:
-        v = conn.execute(
-            "SELECT * FROM task_versions WHERE id=?", (task["current_version_id"],)
-        ).fetchone()
+        v = conn.execute('SELECT * FROM task_versions WHERE id=?', (task['current_version_id'],)).fetchone()
+        if intent == 'delivery':
+            if task['status'] != 'approved' or task['busy_run_id']:
+                raise invalid_state('交付导出只允许未被占用的已确认任务', {'invalid_task_ids': [task['id']]})
+            report = render.current_validation(conn, task, v)
+            row = conn.execute('SELECT * FROM decisions WHERE task_id=? ORDER BY created_at DESC, id DESC LIMIT 1',
+                               (task['id'],)).fetchone()
+            decision = render.render_decision(row) if row else None
+            required = {item['code'] for item in report['issues'] if item['severity'] == 'review_required'}
+            if (report['status'] != 'passed' or any(i['severity'] == 'error' for i in batch_findings.get(task['id'], []))
+                    or not decision or decision['decision'] != 'approve'
+                    or decision['task_version_id'] != task['current_version_id']
+                    or any(not decision['resolutions'].get(code, '').strip() for code in required)):
+                raise invalid_state('当前版本缺少有效确认或核验依据，请重新确认', {'invalid_task_ids': [task['id']]})
         version_rows.append((task, v))
 
     from openpyxl import Workbook
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "任务导出"
+    ws.title = '交付任务' if intent == 'delivery' else '任务草稿'
     ws.append(COLUMNS)
-    batch_findings = batch_checks.current_issues(conn, batch_id)
     for task, version in version_rows:
         content = _loads(version["content_json"])
+        report = render.current_validation(conn, task, version)
+        decision = conn.execute('SELECT * FROM decisions WHERE task_id=? ORDER BY created_at DESC, id DESC LIMIT 1',
+                                (task['id'],)).fetchone()
+        evidence = (_loads(decision['resolutions_json']) if decision and decision['decision'] == 'approve'
+                    and decision['task_version_id'] == version['id'] and task['status'] == 'approved' else {})
+        notes = []
+        for item in report['issues']:
+            if item['severity'] == 'review_required':
+                note = evidence.get(item['code'])
+                notes.append(('已核验：' + item['message'] + '｜依据：' + note) if note
+                             else '待核验：' + item['message'])
+            else:
+                notes.append(('违规：' if item['severity'] == 'error' else '提示：') + item['message'])
+        quality_notes = '\n'.join(notes)
         row_values = [
             str(content["name"]),
             _steps_cell(content["steps"]),
             _materials_cell(content["materials"]),
             STATUS_TEXT.get(task["status"], task["status"]),
-            _review_cell(conn, task["id"], batch_findings.get(task["id"], [])),
+            '\n'.join(part for part in (_review_cell(conn, task["id"], batch_findings.get(task["id"], [])), quality_notes) if part),
         ]
         ws.append(row_values)
         # openpyxl 会把 "=" 开头的字符串当公式（data_type='f'）；
@@ -123,39 +163,40 @@ def create_export(
             cell.data_type = "s"
 
     export_id = ids.new_id("exp")
-    filename = f"G2任务导出_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{export_id[-6:]}.xlsx"
+    label = '交付' if intent == 'delivery' else '草稿'
+    filename = f"G2任务{label}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{export_id[-6:]}.xlsx"
     final_path = CONFIG.exports_dir / filename
     tmp_path = final_path.with_suffix(".xlsx.tmp")
-    wb.save(tmp_path)
     try:
+        wb.save(tmp_path)
         os.replace(tmp_path, final_path)
     except OSError:
         tmp_path.unlink(missing_ok=True)
         raise ApiError(500, "EXPORT_FAILED", "导出文件写入失败")
     try:
-        with db.tx() as c:
-            c.execute(
-                "INSERT INTO exports (id, batch_id, versions_json, filename, file_path,"
-                " created_at) VALUES (?,?,?,?,?,?)",
-                (
-                    export_id,
-                    batch_id,
-                    _dumps(
-                        [
-                            {"task_id": t["id"], "version_id": v["id"]}
-                            for t, v in version_rows
-                        ]
-                    ),
-                    filename,
-                    str(final_path),
-                    db.utcnow(),
+        conn.execute(
+            "INSERT INTO exports (id, batch_id, versions_json, filename, file_path,"
+            " created_at) VALUES (?,?,?,?,?,?)",
+            (
+                export_id,
+                batch_id,
+                _dumps(
+                    [
+                        {"task_id": t["id"], "version_id": v["id"]}
+                        for t, v in version_rows
+                    ]
                 ),
-            )
-            row = c.execute("SELECT * FROM exports WHERE id=?", (export_id,)).fetchone()
-            payload = _render(row)
-            if finish:
-                finish(c, 201, payload)
-            return payload
+                filename,
+                str(final_path),
+                db.utcnow(),
+            ),
+        )
+        conn.execute('UPDATE exports SET intent=? WHERE id=?', (intent, export_id))
+        row = conn.execute("SELECT * FROM exports WHERE id=?", (export_id,)).fetchone()
+        payload = _render(row)
+        if finish:
+            finish(conn, 201, payload)
+        return payload
     except Exception:
         final_path.unlink(missing_ok=True)  # DB 失败时补偿清理
         raise
@@ -165,6 +206,7 @@ def _render(row: Any) -> dict[str, Any]:
     return {
         "id": row["id"],
         "batch_id": row["batch_id"],
+        "intent": row['intent'],
         "versions": _loads(row["versions_json"]),
         "filename": row["filename"],
         "download_url": f"/api/v1/exports/{row['id']}/download",

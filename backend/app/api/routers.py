@@ -41,7 +41,7 @@ router = APIRouter(prefix="/api/v1")
 def health() -> dict:
     conn = db.get_conn()
     conn.execute("SELECT 1").fetchone()
-    return {"status": "ok", "database": "ok", "contract_version": "0.2.0"}
+    return {"status": "ok", "database": "ok", "contract_version": "0.3.0"}
 
 
 @router.get("/settings", tags=["settings"])
@@ -167,6 +167,7 @@ def save_task_version(task_id: str, request: Request, payload: SaveVersion) -> R
             expected_revision=payload.expected_revision,
             content=payload.content.model_dump(),
             change_note=payload.change_note,
+            change_category=payload.change_category,
             finish=finish,
         )
         return 201, result
@@ -195,6 +196,8 @@ def decide_task(task_id: str, request: Request, payload: DecisionRequest) -> Res
             version_id=payload.version_id,
             decision=payload.decision,
             reason=payload.reason,
+            resolutions=payload.resolutions,
+            change_category=payload.change_category,
             finish=finish,
         )
         return 201, result
@@ -294,6 +297,7 @@ def post_message(conversation_id: str, request: Request, payload: MessageCreate)
             attachment_ids=payload.attachment_ids,
             task_ids=payload.task_ids,
             pasted_text=payload.pasted_text,
+            attachment_mode=payload.attachment_mode,
             finish=finish,
         )
 
@@ -320,6 +324,7 @@ def create_export(request: Request, payload: ExportRequest) -> Response:
         result = exports_service.create_export(
             batch_id=payload.batch_id,
             task_ids=payload.task_ids,
+            intent=payload.intent,
             finish=finish,
         )
         return 201, result

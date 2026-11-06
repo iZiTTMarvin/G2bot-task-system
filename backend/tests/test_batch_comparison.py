@@ -1,4 +1,5 @@
 import pytest
+from tests.conftest import confirmation_evidence
 
 
 def task(name, steps):
@@ -136,7 +137,7 @@ def test_partial_similarity_is_a_warning_and_can_be_confirmed(client, monkeypatc
     decision = client.post(
         f"/api/v1/tasks/{tasks[0]['id']}/decisions",
         json={"expected_revision": detail["summary"]["revision"],
-              "version_id": detail["current_version"]["id"], "decision": "approve"},
+              "version_id": detail["current_version"]["id"], "decision": "approve", "resolutions": confirmation_evidence(detail)},
         headers={"Idempotency-Key": "similarity-decision"},
     )
     assert decision.status_code == 201

@@ -1,7 +1,7 @@
 """批次 2B：批次创建约束、任务列表过滤、版本保存与人工决定。"""
 from __future__ import annotations
 
-from tests.conftest import generate, make_batch
+from tests.conftest import confirmation_evidence, generate, make_batch
 
 
 # ---------- 批次 ----------
@@ -246,6 +246,7 @@ def test_save_busy_and_after_approve(client):
             "expected_revision": d["summary"]["revision"],
             "version_id": d["current_version"]["id"],
             "decision": "approve",
+            "resolutions": confirmation_evidence(d),
         },
         headers={"Idempotency-Key": "dec-1"},
     )

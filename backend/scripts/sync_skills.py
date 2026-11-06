@@ -30,7 +30,7 @@ def verify_snapshot(rules: Path, roles: Path, manifest: dict) -> None:
                 raise ValueError("旧规则快照不完整或已被修改，无法安全归档")
 
 
-def sync(source: Path) -> str:
+def sync(source: Path, *, source_label: str | None = None) -> str:
     source = source.resolve(strict=True)
     target = (REPO / "skills/snapshot").resolve()
     if source == target or source in target.parents or target in source.parents:
@@ -66,7 +66,13 @@ def sync(source: Path) -> str:
         p.relative_to(source).as_posix(): p
         for p in source.rglob("*")
         if p.is_file() and "__pycache__" not in p.parts and p.suffix != ".pyc"
+        and p.relative_to(source).as_posix() not in HISTORY_ASSETS | {'MANIFEST.json'}
     }
+    overrides = REPO / 'skills/overrides'
+    if overrides.exists():
+        for path in overrides.rglob('*'):
+            if path.is_file() and path.suffix != '.pyc' and '__pycache__' not in path.parts:
+                incoming[path.relative_to(overrides).as_posix()] = path
     if "SKILL.md" not in incoming or "scripts/check.py" not in incoming:
         raise ValueError("上游 Skill 不完整")
     target.mkdir(parents=True, exist_ok=True)
@@ -89,14 +95,32 @@ def sync(source: Path) -> str:
     }
     identity = json.dumps({"files": files, "agent_files": agent_files}, sort_keys=True).encode()
     snapshot_id = "rs_" + hashlib.sha256(identity).hexdigest()[:16]
-    manifest = {"source": source.as_posix(), "files": files, "agent_files": agent_files,
+    manifest = {"source": source_label or source.as_posix(), "files": files, "agent_files": agent_files,
                 "rule_snapshot_id": snapshot_id}
     manifest_file.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
                              encoding="utf-8", newline="\n")
     return snapshot_id
 
 
+def refresh_local() -> str:
+    target = REPO / 'skills/snapshot'
+    manifest = json.loads((target / 'MANIFEST.json').read_text(encoding='utf-8'))
+    with TemporaryDirectory(prefix='g2-local-rules-') as directory:
+        source = Path(directory)
+        for relative in manifest['files']:
+            if relative in HISTORY_ASSETS:
+                continue
+            destination = source / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(target / relative, destination)
+        return sync(source, source_label=manifest['source'])
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("source", type=Path)
-    print(sync(parser.parse_args().source))
+    parser.add_argument("source", type=Path, nargs='?')
+    parser.add_argument('--local', action='store_true', help='应用项目 overrides 并生成清单，不读取上游')
+    args = parser.parse_args()
+    if args.local == bool(args.source):
+        parser.error('指定上游 source 或 --local，两者任选其一')
+    print(refresh_local() if args.local else sync(args.source))

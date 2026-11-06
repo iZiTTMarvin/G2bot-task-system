@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "G2 Task System Demo API",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "paths": {
     "/api/v1/health": {
@@ -1606,6 +1606,29 @@
             "maxLength": 5000,
             "title": "Reason",
             "default": ""
+          },
+          "resolutions": {
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "type": "object",
+            "maxProperties": 200,
+            "title": "Resolutions"
+          },
+          "change_category": {
+            "type": "string",
+            "enum": [
+              "capability",
+              "purpose",
+              "terminal_state",
+              "wording",
+              "materials",
+              "duplicate",
+              "other"
+            ],
+            "title": "Change Category",
+            "default": "other"
           }
         },
         "additionalProperties": false,
@@ -1639,6 +1662,15 @@
             "maxItems": 100,
             "minItems": 1,
             "title": "Task Ids"
+          },
+          "intent": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "delivery"
+            ],
+            "title": "Intent",
+            "default": "draft"
           }
         },
         "additionalProperties": false,
@@ -1700,6 +1732,17 @@
             "type": "array",
             "maxItems": 20,
             "title": "Attachment Ids"
+          },
+          "attachment_mode": {
+            "type": "string",
+            "enum": [
+              "inherit",
+              "replace",
+              "append",
+              "clear"
+            ],
+            "title": "Attachment Mode",
+            "default": "inherit"
           },
           "task_ids": {
             "items": {
@@ -1765,6 +1808,20 @@
             "maxLength": 2000,
             "title": "Change Note",
             "default": ""
+          },
+          "change_category": {
+            "type": "string",
+            "enum": [
+              "capability",
+              "purpose",
+              "terminal_state",
+              "wording",
+              "materials",
+              "duplicate",
+              "other"
+            ],
+            "title": "Change Category",
+            "default": "other"
           }
         },
         "additionalProperties": false,

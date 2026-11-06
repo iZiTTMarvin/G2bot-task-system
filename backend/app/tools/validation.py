@@ -13,6 +13,7 @@ from typing import Any
 from ..errors import ApiError
 from ..prompts_spec import STEP_RANGES
 from .skill_bundle import SkillBundle, load_bundle
+from .quality import quality_issues
 
 _STEP_NO_RE = re.compile(r"第(\d+)步")
 _RULE_ID_RE = re.compile(r"(L-\d{3})")
@@ -156,7 +157,8 @@ def materials_to_text(materials: list[dict[str, Any]], *, bundle: SkillBundle | 
 
 
 def validate_content(
-    content: dict[str, Any], task_mode: str, snapshot_id: str, *, bundle: SkillBundle | None = None
+    content: dict[str, Any], task_mode: str, snapshot_id: str, *, bundle: SkillBundle | None = None,
+    inventory: list[dict] | None = None,
 ) -> dict[str, Any]:
     """返回 ValidationReport dict。领域失败 → status=failed（允许保存）；工具崩溃 → 抛 ApiError。"""
     try:
@@ -207,6 +209,11 @@ def validate_content(
                 }
             )
 
+        if inventory is None:
+            from ..agents.trace import current_inventory
+            inventory = current_inventory()
+        if inventory is not None:
+            issues.extend(quality_issues(content, inventory))
         status = "failed" if any(i["severity"] == "error" for i in issues) else "passed"
         return {
             "status": status,

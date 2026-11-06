@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import time
+import threading
 from typing import Any
 from uuid import uuid4
 
@@ -45,8 +47,14 @@ class TraceCallback(BaseCallbackHandler):
         self.core_rules = core_rules.strip()
         self.loaded_skills: set[str] = set()
         self.memory_loaded = False
+        self._calls: dict[str, float] = {}
+        self._lock = threading.Lock()
 
     def on_chat_model_start(self, serialized, messages, **kwargs):
+        call_id = str(kwargs.get('run_id'))
+        with self._lock:
+            self._calls[call_id] = time.perf_counter()
+        self.trace.write('model_call_started', call_id=call_id)
         for conversation in messages:
             system = "\n".join(m.text for m in conversation if m.type == "system")
             if not self.memory_loaded and self.core_rules and self.core_rules in system:
@@ -58,6 +66,19 @@ class TraceCallback(BaseCallbackHandler):
                     if name not in self.loaded_skills:
                         self.loaded_skills.add(name)
                         self.trace.write("skill_loaded", name=name)
+
+    def _finish_call(self, run_id, failed: bool):
+        with self._lock:
+            started = self._calls.pop(str(run_id), None)
+        if started is not None:
+            self.trace.write('model_call_finished', call_id=str(run_id), failed=failed,
+                             elapsed_seconds=round(time.perf_counter() - started, 6))
+
+    def on_llm_end(self, response, *, run_id, **kwargs):
+        self._finish_call(run_id, False)
+
+    def on_llm_error(self, error, *, run_id, **kwargs):
+        self._finish_call(run_id, True)
 
     def on_tool_start(self, serialized, input_str, *, inputs=None, **kwargs):
         fields = {}
@@ -198,8 +219,8 @@ class DeepAgentClient:
                         "。已检查候选编号：" + json.dumps(list(tools.checked)) +
                         "。完成后重新提交结果，不得宣称已执行未执行的检查。"}]}
             raise ModelCallError("MODEL_PROTOCOL_ERROR", "Agent 未完成 Skill 或最终正文工具检查")
-        except ModelCallError:
-            trace.write("failed", code="MODEL_PROTOCOL_ERROR")
+        except ModelCallError as exc:
+            trace.write("failed", code=exc.code)
             raise
         except ApiError:
             trace.write("failed", code="RULE_TOOL_FAILED")

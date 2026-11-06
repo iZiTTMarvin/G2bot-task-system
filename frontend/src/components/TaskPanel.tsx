@@ -1,115 +1,60 @@
-import { Button, Checkbox, Empty } from 'antd';
-import type { TaskSummary } from '../api/types';
-import { STATUS_LABEL } from '../api/types';
-import StatusChip from './StatusChip';
+import { useState } from 'react';
+import { ArrowDownToLine, ChevronDown, ClipboardList, Search, ShieldCheck, SlidersHorizontal } from 'lucide-react';
+import type { TaskSummary } from '@/api/types';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import StatusChip from '@/components/StatusChip';
 
 interface Props {
-  tasks: TaskSummary[];
-  selected: string[];
-  onToggle: (id: string) => void;
-  onToggleAll: () => void;
-  onOpen: (id: string) => void;
-  onExport: () => void;
-  onSubmit: () => void;
-  exporting: boolean;
-  submitting: boolean;
-  reviewBusy: boolean;
+  tasks: TaskSummary[]; selected: string[]; onSelection: (ids: string[]) => void;
+  onOpen: (id: string) => void; onExport: (intent: 'draft' | 'delivery') => void;
+  onSubmit: () => void; exporting: boolean; submitting: boolean; busy: boolean;
 }
 
-function badge(task: TaskSummary) {
-  if (task.batch_comparison === 'duplicate') {
-    return <span className="row-badge is-warn">步骤重复</span>;
-  }
-  if (task.batch_comparison === 'similar') {
-    return <span className="row-badge is-warn">相似待留意</span>;
-  }
-  if (task.issue_count && task.issue_count > 0) {
-    return <span className="row-badge is-warn">留 {task.issue_count} 条意见</span>;
-  }
-  if (task.human_edited) return <span className="row-badge">人工改过</span>;
-  return null;
-}
-
-export default function TaskPanel({
-  tasks,
-  selected,
-  onToggle,
-  onToggleAll,
-  onOpen,
-  onExport,
-  onSubmit,
-  exporting,
-  submitting,
-  reviewBusy,
-}: Props) {
-  const allSelected = tasks.length > 0 && selected.length === tasks.length;
-  const approved = tasks.filter((task) => task.status === 'approved').length;
-
-  return (
-    <aside className="results">
-      <header className="results-head">
-        <div>
-          <div className="results-title">任务 · {tasks.length}</div>
-          <div className="results-sub">
-            已确认 {approved} 条{selected.length ? ` · 选中 ${selected.length}` : ''}
-          </div>
-        </div>
-        <Checkbox
-          checked={allSelected}
-          indeterminate={selected.length > 0 && !allSelected}
-          onChange={onToggleAll}
-          disabled={!tasks.length}
-        >
-          全选
-        </Checkbox>
-      </header>
-
-      <div className="results-body">
-        {tasks.map((task) => (
-          <div
-            key={task.id}
-            className={`task-row${selected.includes(task.id) ? ' is-selected' : ''}`}
-          >
-            <Checkbox
-              checked={selected.includes(task.id)}
-              onChange={() => onToggle(task.id)}
-              onClick={(event) => event.stopPropagation()}
-            />
-            <button type="button" className="task-open" onClick={() => onOpen(task.id)}>
-              <div className="task-line">
-                <span className="task-seq">{String(task.seq).padStart(2, '0')}</span>
-                <span className="task-name">{task.name}</span>
-                <StatusChip task={task} compact />
-              </div>
-              <div className="task-meta">
-                {task.step_count} 步 · {STATUS_LABEL[task.status]}
-                {badge(task)}
-              </div>
-            </button>
-          </div>
-        ))}
-        {!tasks.length && (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有任务" />
-        )}
+export default function TaskPanel({ tasks, selected, onSelection, onOpen, onExport, onSubmit, exporting, submitting, busy }: Props) {
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState('all');
+  const filters: Record<string, string> = { all: '全部任务', pending: '待确认', approved: '已确认', attention: '需处理' };
+  const visible = tasks.filter((task) => task.name.includes(query) && (filter === 'all' ||
+    (filter === 'approved' ? task.status === 'approved' : filter === 'pending' ? task.status === 'human_pending' : ['ai_rejected', 'review_failed', 'rejected'].includes(task.status))));
+  const approved = tasks.filter((t) => t.status === 'approved').length;
+  const allChecked = visible.length > 0 && visible.every((t) => selected.includes(t.id));
+  const chosen = tasks.filter((t) => selected.includes(t.id));
+  const deliveryReady = chosen.length > 0 && chosen.every((t) => t.status === 'approved' && !t.busy_run_id);
+  const batchIds = [...new Set(visible.map((t) => t.batch_id))];
+  return <section className="results-panel" aria-label="任务结果">
+    <header className="results-header"><div><h2>任务结果 <span>{tasks.length}</span></h2><p>已确认 {approved} 条{tasks.length > approved ? `，还有 ${tasks.length - approved} 条待处理` : ''}</p></div>
+      <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label="筛选任务"><SlidersHorizontal className="size-4" /></Button></DropdownMenuTrigger>
+        <DropdownMenuContent align="end">{Object.entries(filters).map(([value, label]) => <DropdownMenuItem key={value} onSelect={() => setFilter(value)}>{label}{filter === value && <span className="ml-auto">✓</span>}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>
+    </header>
+    {tasks.length > 0 && <div className="result-tools"><div className="result-search"><Search className="size-3.5" /><Input aria-label="搜索任务" placeholder="搜索任务" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
+      <label className="select-visible"><Checkbox checked={allChecked ? true : visible.some((t) => selected.includes(t.id)) ? 'indeterminate' : false}
+        disabled={!visible.length} onCheckedChange={() => onSelection(allChecked ? selected.filter((id) => !visible.some((t) => t.id === id)) : [...new Set([...selected, ...visible.map((t) => t.id)])])} />全选</label></div>}
+    <div className="results-scroll">
+      {batchIds.map((batchId, batchIndex) => <div className="result-batch" key={batchId}>
+        {batchIds.length > 1 && <div className="batch-label">任务批次 {batchIndex + 1}</div>}
+        {visible.filter((t) => t.batch_id === batchId).map((task, index) => <div className={`task-row${selected.includes(task.id) ? ' is-selected' : ''}`} key={task.id}>
+          <Checkbox aria-label={`选择任务 ${task.name}`} checked={selected.includes(task.id)} onCheckedChange={() => onSelection(selected.includes(task.id) ? selected.filter((id) => id !== task.id) : [...selected, task.id])} />
+          <button type="button" className="task-open" onClick={() => onOpen(task.id)}>
+            <span className="task-index">{String(index + 1).padStart(2, '0')}</span><span className="task-text"><strong>{task.name}</strong>
+              <span className="task-metadata"><span>{task.step_count} 步</span><span>版本 {task.version_no}</span>{task.human_edited && <span>已编辑</span>}</span>
+              {(task.batch_comparison === 'duplicate' || task.batch_comparison === 'similar') && <span className="task-warning">{task.batch_comparison === 'duplicate' ? '步骤重复，需要调整' : '有相似线索，请留意用途与对象'}</span>}
+            </span><StatusChip task={task} compact />
+          </button>
+        </div>)}
+      </div>)}
+      {!visible.length && <div className="results-empty"><ClipboardList className="size-7" /><h3>{tasks.length ? '没有匹配的任务' : '任务将在这里出现'}</h3><p>{tasks.length ? '尝试调整关键词或筛选条件。' : '生成完成后，可逐条查看、编辑与确认。'}</p></div>}
+    </div>
+    <footer className="results-footer"><div className="selection-summary">{selected.length ? `已选 ${selected.length} 条任务` : '选择任务后可送审或导出'}{filter !== 'all' && <button onClick={() => setFilter('all')}>{filters[filter]}，清除筛选</button>}</div>
+      <div className="result-actions"><Button variant="outline" disabled={!selected.length || busy || submitting || chosen.some((t) => Boolean(t.busy_run_id))} onClick={onSubmit}><ShieldCheck className="size-4" />{submitting ? '正在送审' : '送审所选'}</Button>
+        <DropdownMenu><DropdownMenuTrigger asChild><Button disabled={!selected.length || exporting}><ArrowDownToLine className="size-4" />{exporting ? '正在导出' : '导出'}<ChevronDown className="size-3.5" /></Button></DropdownMenuTrigger>
+          <DropdownMenuContent align="end"><DropdownMenuLabel>导出 {selected.length} 条所选任务</DropdownMenuLabel>
+            <DropdownMenuItem onSelect={() => onExport('draft')}>导出草稿<span className="menu-hint">任意状态</span></DropdownMenuItem>
+            <DropdownMenuSeparator /><DropdownMenuItem disabled={!deliveryReady} onSelect={() => onExport('delivery')}>导出交付<span className="menu-hint">仅已确认版本</span></DropdownMenuItem>
+          </DropdownMenuContent></DropdownMenu>
       </div>
-
-      <footer className="results-foot">
-        <Button
-          onClick={onSubmit}
-          loading={submitting}
-          disabled={!selected.length || reviewBusy}
-        >
-          {selected.length ? `送审 ${selected.length} 条` : '送审'}
-        </Button>
-        <Button
-          type="primary"
-          onClick={onExport}
-          loading={exporting}
-          disabled={!selected.length}
-        >
-          导出表格
-        </Button>
-      </footer>
-    </aside>
-  );
+    </footer>
+  </section>;
 }

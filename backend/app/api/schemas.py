@@ -1,7 +1,7 @@
 """请求体模型：全部 extra="forbid"，未知字段直接 422（防拼错静默忽略）。"""
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -54,6 +54,7 @@ class MessageCreate(StrictModel):
 
     content: str = Field(default="", max_length=20000)
     attachment_ids: list[str] = Field(default_factory=list, max_length=20)
+    attachment_mode: Literal['inherit', 'replace', 'append', 'clear'] = 'inherit'
     task_ids: list[str] = Field(default_factory=list, max_length=100)
     pasted_text: str = Field(default="", max_length=80000)
 
@@ -71,6 +72,7 @@ class SaveVersion(StrictModel):
     expected_revision: int = Field(ge=1)
     content: TaskContentIn
     change_note: str = Field(default="", max_length=2000)
+    change_category: Literal['capability', 'purpose', 'terminal_state', 'wording', 'materials', 'duplicate', 'other'] = 'other'
 
 
 class VersionAction(StrictModel):
@@ -89,8 +91,11 @@ class DecisionRequest(StrictModel):
     version_id: str = Field(min_length=1, max_length=128)
     decision: str = Field(pattern="^(approve|reject)$")
     reason: str = Field(default="", max_length=5000)
+    resolutions: dict[str, Annotated[str, Field(max_length=2000)]] = Field(default_factory=dict, max_length=200)
+    change_category: Literal['capability', 'purpose', 'terminal_state', 'wording', 'materials', 'duplicate', 'other'] = 'other'
 
 
 class ExportRequest(StrictModel):
     batch_id: str = Field(min_length=1, max_length=128)
     task_ids: list[str] = Field(min_length=1, max_length=100)
+    intent: Literal['draft', 'delivery'] = 'draft'

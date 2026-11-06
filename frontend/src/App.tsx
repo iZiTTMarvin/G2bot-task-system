@@ -1,342 +1,160 @@
-import { App as AntApp, Button, ConfigProvider, Modal, Typography, message } from 'antd';
-import zhCN from 'antd/locale/zh_CN';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { realClient as api } from './api';
-import { newIdempotencyKey } from './api/client';
-import type { SendMessageInput } from './api/client';
-import type { ApiError } from './api/errors';
-import type {
-  AgentRole,
-  AttachmentSummary,
-  ChatMessage,
-  Conversation,
-  TaskSummary,
-} from './api/types';
-import ChatPanel from './components/ChatPanel';
-import TaskDetailDrawer from './components/TaskDetailDrawer';
-import TaskPanel from './components/TaskPanel';
-import SettingsPage from './pages/SettingsPage';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { Download, Menu, Monitor, Moon, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings2, Sun } from 'lucide-react';
+import { useTheme } from 'next-themes';
+import { toast } from 'sonner';
+import { realClient as api } from '@/api/real';
+import { newIdempotencyKey } from '@/api/client';
+import type { Conversation } from '@/api/types';
+import { useWorkspace } from '@/hooks/use-workspace';
+import WorkspaceSidebar from '@/components/WorkspaceSidebar';
+import ChatPanel from '@/components/ChatPanel';
+import TaskPanel from '@/components/TaskPanel';
+import { ConfirmDialog, IconButton, InlineError, type ConfirmState } from '@/components/shared';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
+import { Input } from '@/components/ui/input';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { Toaster } from '@/components/ui/sonner';
+import { Skeleton } from '@/components/ui/skeleton';
 import './app.css';
 
-const { Text } = Typography;
-
-const ROLE_TITLE: Record<AgentRole, string> = {
-  generator: '生成 Agent',
-  reviewer: '审核 Agent',
-};
+const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
+const MaterialLibrary = lazy(() => import('@/components/MaterialLibrary'));
+const TaskDetailDrawer = lazy(() => import('@/components/TaskDetailDrawer'));
 
 export default function App() {
-  const [role, setRole] = useState<AgentRole>('generator');
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [active, setActive] = useState<Record<AgentRole, string | null>>({
-    generator: null,
-    reviewer: null,
-  });
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [tasks, setTasks] = useState<TaskSummary[]>([]);
-  const [attachments, setAttachments] = useState<AttachmentSummary[]>([]);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
+  const w = useWorkspace(api);
+  const { theme, setTheme } = useTheme();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  useEffect(() => {
+    if (sidebarCollapsed) document.querySelector<HTMLButtonElement>('.desktop-expand-trigger')?.focus();
+  }, [sidebarCollapsed]);
+  const [mobileSidebar, setMobileSidebar] = useState(false);
+  const [resultsOpen, setResultsOpen] = useState(true);
+  const [mobileTab, setMobileTab] = useState('chat');
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsDirty, setSettingsDirty] = useState(false);
+  const [taskId, setTaskId] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<Conversation | null>(null);
+  const [renameText, setRenameText] = useState('');
+  const [renameBusy, setRenameBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [tick, setTick] = useState(0);
-
-  const activeId = active[role];
-  const conversation = conversations.find((item) => item.id === activeId) ?? null;
-
-  const loadConversations = useCallback(async () => {
-    const page = await api.listConversations();
-    setConversations(page.items);
-    return page.items;
-  }, []);
-
-  const loadAttachments = useCallback(async () => {
-    const page = await api.listAttachments(1, 60);
-    setAttachments(page.items);
-  }, []);
-
+  const [model, setModel] = useState('');
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const actionLock = useRef(false);
+  const pendingAction = useRef<{ digest: string; key: string } | null>(null);
+  const reviewerId = useRef<string | null>(null);
+  const { hasDrafts, sending } = w;
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const [items, attachmentPage] = await Promise.all([
-          loadConversations(),
-          api.listAttachments(1, 60),
-        ]);
-        if (cancelled) return;
-        setAttachments(attachmentPage.items);
-        const next: Record<AgentRole, string | null> = { generator: null, reviewer: null };
-        for (const value of ['generator', 'reviewer'] as AgentRole[]) {
-          const found = items.find((item) => item.agent_role === value);
-          next[value] = found ? found.id : (await api.createConversation(value)).id;
-        }
-        if (cancelled) return;
-        await loadConversations();
-        setActive(next);
-      } catch (cause) {
-        if (!cancelled) message.error((cause as ApiError).message);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [loadConversations]);
-
-  useEffect(() => {
-    if (!activeId) {
-      setMessages([]);
-      setTasks([]);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const [messageList, taskList] = await Promise.all([
-          api.listMessages(activeId),
-          api.conversationTasks(activeId),
-        ]);
-        if (cancelled) return;
-        setMessages(messageList.items);
-        setTasks(taskList.items);
-      } catch (cause) {
-        if (!cancelled) message.error((cause as ApiError).message);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeId, tick]);
-
-  const runActive = useMemo(
-    () => messages.some((item) => item.run && ['queued', 'running'].includes(item.run.status)),
-    [messages]
-  );
-
-  useEffect(() => {
-    if (!runActive) return;
-    const timer = setInterval(() => setTick((value) => value + 1), 1500);
-    return () => clearInterval(timer);
-  }, [runActive]);
-
-  const refresh = () => setTick((value) => value + 1);
-
-  const send = async (input: SendMessageInput) => {
-    if (!activeId) return;
-    setSending(true);
-    try {
-      await api.sendMessage(activeId, input, newIdempotencyKey());
-      refresh();
-    } catch (cause) {
-      message.error((cause as ApiError).message);
-    } finally {
-      setSending(false);
-    }
+    if (!hasDrafts && !settingsDirty && !sending) return;
+    const guard = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', guard);
+    return () => window.removeEventListener('beforeunload', guard);
+  }, [hasDrafts, settingsDirty, sending]);
+  const refreshModel = () => api.getSettings().then((settings) => setModel(settings.generation_model)).catch(() => setModel(''));
+  useEffect(() => { let active = true; api.getSettings().then((settings) => { if (active) setModel(settings.generation_model); }).catch(() => { if (active) setModel(''); }); return () => { active = false; }; }, []);
+  const startRename = (conversation: Conversation) => { setRenaming(conversation); setRenameText(conversation.title); };
+  const keyFor = (input: unknown) => {
+    const digest = JSON.stringify(input);
+    if (pendingAction.current?.digest !== digest) pendingAction.current = { digest, key: newIdempotencyKey() };
+    return pendingAction.current.key;
   };
-
   const submit = async () => {
-    if (!selected.length) return;
-    const reviewerId = active.reviewer;
-    if (!reviewerId) {
-      message.warning('审核会话还没准备好，稍等一下');
-      return;
-    }
-    setSubmitting(true);
+    if (actionLock.current || !w.selected.length) return;
+    actionLock.current = true; setSubmitting(true);
     try {
-      await api.sendMessage(
-        reviewerId,
-        { content: `送审 ${selected.length} 条任务`, task_ids: selected },
-        newIdempotencyKey()
-      );
-      setSelected([]);
-      setRole('reviewer');
-      refresh();
-    } catch (cause) {
-      message.error((cause as ApiError).message);
-    } finally {
-      setSubmitting(false);
-    }
+      let target = w.conversations.find((c) => c.agent_role === 'reviewer')?.id ?? reviewerId.current;
+      if (!target) { const created = await api.createConversation('reviewer'); target = created.id; reviewerId.current = target; }
+      const input = { content: `审核所选 ${w.selected.length} 条任务`, task_ids: w.selected };
+      const result = await api.sendMessage(target, input, keyFor(['submit', target, input]));
+      pendingAction.current = null; w.setSelected([]); w.choose(result.conversation); w.refresh(); setResultsOpen(true); setMobileTab('tasks');
+      void w.refreshIndex().catch(() => toast.warning('已送审，导航更新失败，可稍后刷新'));
+      toast.success(`已送审 ${input.task_ids.length} 条任务`);
+    } catch (cause) { toast.error((cause as Error).message); }
+    finally { actionLock.current = false; setSubmitting(false); }
   };
-
-  const exportSelected = async () => {
-    if (!selected.length) return;
-    const chosen = tasks.filter((task) => selected.includes(task.id));
-    const batchId = chosen[0]?.batch_id;
-    if (!batchId) return;
-    const sameBatch = chosen.filter((task) => task.batch_id === batchId);
-    if (sameBatch.length !== chosen.length) {
-      message.info('导出一次只覆盖同一批任务，本次先导同批的那些');
-    }
-    setExporting(true);
+  const requestSubmit = () => {
+    if (w.tasks.some((task) => w.selected.includes(task.id) && task.status === 'approved')) setConfirm({ title: '重新审核所选任务', description: '其中已确认的任务将撤回交付资格，审核后需要重新人工确认。', action: '送去审核', onConfirm: () => void submit() });
+    else void submit();
+  };
+  const exportTasks = async (intent: 'draft' | 'delivery') => {
+    if (actionLock.current || !w.selected.length) return;
+    const chosen = w.tasks.filter((task) => w.selected.includes(task.id));
+    if (new Set(chosen.map((task) => task.batch_id)).size !== 1) { toast.error('请只选择同一批次的任务，避免漏导'); return; }
+    actionLock.current = true; setExporting(true);
     try {
-      const record = await api.createExport(
-        { batch_id: batchId, task_ids: sameBatch.map((task) => task.id) },
-        newIdempotencyKey()
-      );
+      const input = { batch_id: chosen[0].batch_id, task_ids: chosen.map((task) => task.id), intent };
+      const record = await api.createExport(input, keyFor(['export', input]));
       const blob = await api.downloadExport(record.download_url);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = record.filename;
-      link.click();
-      URL.revokeObjectURL(url);
-      message.success(`已导出 ${sameBatch.length} 条`);
-    } catch (cause) {
-      message.error((cause as ApiError).message);
-    } finally {
-      setExporting(false);
+      const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = record.filename;
+      document.body.append(link); link.click(); link.remove(); URL.revokeObjectURL(url); pendingAction.current = null;
+      toast.success(`已导出 ${chosen.length} 条${intent === 'delivery' ? '交付任务' : '任务草稿'}`);
+    } catch (cause) { toast.error((cause as Error).message); }
+    finally { actionLock.current = false; setExporting(false); }
+  };
+  const closeSettings = (open: boolean) => {
+    if (!open && settingsDirty) setConfirm({ title: '放弃设置修改？', description: '修改尚未保存，关闭后会恢复原设置。', action: '放弃修改', destructive: true, onConfirm: () => { setSettingsOpen(false); setSettingsDirty(false); } });
+    else setSettingsOpen(open);
+  };
+  const previousBusy = useRef(false);
+  const { busy: workspaceBusy, refreshIndex, refresh: refreshWorkspace } = w;
+  useEffect(() => {
+    if (previousBusy.current && !workspaceBusy) {
+      refreshWorkspace();
+      void refreshIndex().catch(() => toast.warning('任务已处理，导航更新失败，可稍后刷新'));
     }
-  };
-
-  const newConversation = async (value: AgentRole) => {
-    try {
-      const created = await api.createConversation(value);
-      await loadConversations();
-      setActive((current) => ({ ...current, [value]: created.id }));
-      setRole(value);
-      setSelected([]);
-    } catch (cause) {
-      message.error((cause as ApiError).message);
-    }
-  };
-
-  const switchConversation = (id: string, value: AgentRole) => {
-    setActive((current) => ({ ...current, [value]: id }));
-    setRole(value);
-    setSelected([]);
-  };
-
-  const toggle = (id: string) =>
-    setSelected((current) =>
-      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
-    );
-
-  const toggleAll = () =>
-    setSelected((current) => (current.length === tasks.length ? [] : tasks.map((task) => task.id)));
-
-  return (
-    <ConfigProvider
-      locale={zhCN}
-      theme={{
-        token: {
-          borderRadius: 8,
-          colorPrimary: '#3157c8',
-          colorBgLayout: '#f6f7f9',
-          fontFamily: 'Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif',
-        },
-      }}
-    >
-      <AntApp>
-        <div className="workbench">
-          <aside className="sidebar">
-            <div className="brand">
-              <span className="brand-mark">G2</span>
-              <div>
-                <div className="brand-name">任务系统</div>
-                <div className="brand-sub">双 Agent 工作台</div>
-              </div>
-            </div>
-
-            {(['generator', 'reviewer'] as AgentRole[]).map((value) => (
-              <section className="conv-group" key={value}>
-                <div className="conv-head">
-                  <span className={`conv-role role-${value}`}>{ROLE_TITLE[value]}</span>
-                  <button
-                    type="button"
-                    className="conv-new"
-                    onClick={() => void newConversation(value)}
-                  >
-                    + 新会话
-                  </button>
-                </div>
-                {conversations
-                  .filter((item) => item.agent_role === value)
-                  .map((item) => (
-                    <button
-                      type="button"
-                      key={item.id}
-                      className={`conv-item${activeId === item.id ? ' is-active' : ''}`}
-                      onClick={() => switchConversation(item.id, value)}
-                    >
-                      <span className="conv-title">{item.title}</span>
-                      <span className="conv-meta">
-                        {item.message_count} 条 · {item.task_count} 任务
-                      </span>
-                    </button>
-                  ))}
-                {!conversations.some((item) => item.agent_role === value) && (
-                  <div className="conv-empty">还没有会话</div>
-                )}
-              </section>
-            ))}
-
-            <section className="library">
-              <div className="conv-head">
-                <span className="conv-role">物料库</span>
-              </div>
-              {attachments.slice(0, 6).map((item) => (
-                <div className="library-item" key={item.id} title={item.filename}>
-                  {item.filename}
-                </div>
-              ))}
-              {!attachments.length && <div className="conv-empty">还没上传过</div>}
-            </section>
-
-            <div className="sidebar-foot">
-              <Button size="small" block onClick={() => setSettingsOpen(true)}>
-                API 设置
-              </Button>
-            </div>
-          </aside>
-
-          <ChatPanel
-            key={activeId ?? 'none'}
-            api={api}
-            role={role}
-            conversation={conversation}
-            messages={messages}
-            attachments={attachments}
-            sending={sending}
-            onSend={send}
-            onAttachmentsChanged={() => void loadAttachments()}
-          />
-
-          <TaskPanel
-            tasks={tasks}
-            selected={selected}
-            onToggle={toggle}
-            onToggleAll={toggleAll}
-            onOpen={setOpenTaskId}
-            onSubmit={() => void submit()}
-            onExport={() => void exportSelected()}
-            exporting={exporting}
-            submitting={submitting}
-            reviewBusy={runActive}
-          />
-
-          <TaskDetailDrawer
-            key={openTaskId ?? 'closed'}
-            api={api}
-            taskId={openTaskId}
-            onClose={() => setOpenTaskId(null)}
-            onChanged={refresh}
-          />
-        </div>
-
-        <Modal
-          open={settingsOpen}
-          title="API 设置"
-          footer={null}
-          width={520}
-          onCancel={() => setSettingsOpen(false)}
-        >
-          <SettingsPage api={api} />
-          <Text type="secondary" className="settings-note">
-            生成与审核默认使用同一模型；换模型不会影响已有任务和版本。
-          </Text>
-        </Modal>
-      </AntApp>
-    </ConfigProvider>
-  );
+    previousBusy.current = workspaceBusy;
+  }, [workspaceBusy, refreshIndex, refreshWorkspace]);
+  const activeTaskIndex = w.tasks.findIndex((task) => task.id === taskId);
+  const showResults = w.tasks.length > 0 && resultsOpen;
+  const sidebar = (mobile: boolean) => <WorkspaceSidebar workspace={w} onLibrary={() => { setLibraryOpen(true); setMobileSidebar(false); }}
+    onSettings={() => { setSettingsOpen(true); setMobileSidebar(false); }} onRename={startRename}
+    onCollapse={() => mobile ? setMobileSidebar(false) : setSidebarCollapsed(true)} onNavigate={mobile ? () => setMobileSidebar(false) : undefined} />;
+  return <TooltipProvider delayDuration={350}><div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
+    <div className="desktop-sidebar">{sidebar(false)}</div>
+    <div className="workspace-main"><header className="workspace-header"><div className="workspace-heading">
+      <IconButton className="mobile-nav-trigger" label="打开导航" onClick={() => setMobileSidebar(true)}><Menu /></IconButton>
+      {sidebarCollapsed && <IconButton className="desktop-expand-trigger" label="展开导航" onClick={() => setSidebarCollapsed(false)}><PanelLeftOpen /></IconButton>}
+      <div><span className="header-eyebrow">{w.role === 'reviewer' ? '审核工作区' : '任务工作区'}</span><h1 title={w.conversation?.title}>{w.conversation?.title ?? '新建任务集'}</h1></div>
+    </div><div className="header-actions">
+      <span className="model-indicator" title={model}>{model ? <><i />{model}</> : <button onClick={() => setSettingsOpen(true)}>模型设置</button>}</span>
+      <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label="切换主题">{theme === 'dark' ? <Moon className="size-4" /> : <Sun className="size-4" />}</Button></DropdownMenuTrigger>
+        <DropdownMenuContent align="end"><DropdownMenuLabel>外观</DropdownMenuLabel>{[{ value: 'light', label: '浅色', Icon: Sun }, { value: 'dark', label: '深色', Icon: Moon }, { value: 'system', label: '跟随系统', Icon: Monitor }].map(({ value, label, Icon }) => <DropdownMenuItem key={value} onSelect={() => setTheme(value)}><Icon className="size-4" />{label}{theme === value && <span className="ml-auto">✓</span>}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>
+      <IconButton label="模型设置" onClick={() => setSettingsOpen(true)}><Settings2 /></IconButton>
+      {w.tasks.length > 0 && <IconButton className="results-toggle" label={showResults ? '收起任务结果' : '展开任务结果'} onClick={() => setResultsOpen((value) => !value)}>{showResults ? <PanelRightClose /> : <PanelRightOpen />}</IconButton>}
+    </div></header>
+      {w.indexError && <InlineError message={w.indexError} action="重试" onAction={() => void w.refreshIndex().catch((e: Error) => toast.error(e.message))} />}
+      {w.tasks.length > 0 && <div className="mobile-view-tabs" role="tablist" aria-label="工作区视图" onKeyDown={(event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        const buttons = event.currentTarget.querySelectorAll<HTMLButtonElement>('[role=tab]');
+        const value = event.key === 'Home' ? 'chat' : event.key === 'End' ? 'tasks' : mobileTab === 'chat' ? 'tasks' : 'chat';
+        setMobileTab(value); buttons[value === 'chat' ? 0 : 1]?.focus();
+      }}><button id="view-chat-tab" role="tab" aria-controls="workspace-chat" tabIndex={mobileTab === 'chat' ? 0 : -1} aria-selected={mobileTab === 'chat'} onClick={() => setMobileTab('chat')}>对话</button><button id="view-tasks-tab" role="tab" aria-controls="workspace-results" tabIndex={mobileTab === 'tasks' ? 0 : -1} aria-selected={mobileTab === 'tasks'} onClick={() => setMobileTab('tasks')}>任务结果<span>{w.tasks.length}</span></button></div>}
+      <div className={`workspace-body${showResults ? ' has-results' : ''} mobile-view-${w.tasks.length ? mobileTab : 'chat'}`}>
+        <ChatPanel workspace={w} onLibrary={() => setLibraryOpen(true)} onSettings={() => setSettingsOpen(true)} />
+        {w.tasks.length > 0 && <div id="workspace-results" role="tabpanel" aria-labelledby="view-tasks-tab" className={`results-container${!resultsOpen ? ' is-collapsed' : ''}`}><TaskPanel tasks={w.tasks} selected={w.selected} onSelection={w.setSelected} onOpen={setTaskId}
+          onExport={(intent) => void exportTasks(intent)} onSubmit={requestSubmit} exporting={exporting} submitting={submitting} busy={w.busy || w.interactionBusy} /></div>}
+      </div>
+      {!showResults && w.tasks.length > 0 && <Button className="floating-results" variant="outline" onClick={() => { setResultsOpen(true); setMobileTab('tasks'); }}><Download className="size-4" />查看 {w.tasks.length} 条任务</Button>}
+    </div>
+    <Sheet open={mobileSidebar} onOpenChange={setMobileSidebar}><SheetContent side="left" className="mobile-sidebar-sheet" showCloseButton={false}><SheetTitle className="sr-only">任务集导航</SheetTitle><SheetDescription className="sr-only">查看历史任务集或创建新任务</SheetDescription>{sidebar(true)}</SheetContent></Sheet>
+    <Dialog open={settingsOpen} onOpenChange={closeSettings}><DialogContent className="settings-dialog sm:max-w-xl"><DialogHeader><DialogTitle>模型设置</DialogTitle><DialogDescription>连接你自己的 OpenAI 或 Anthropic 兼容服务。</DialogDescription></DialogHeader>
+      {settingsOpen && <Suspense fallback={<Skeleton className="h-64 w-full" />}><SettingsPage api={api} onDirtyChange={setSettingsDirty} onSaved={() => { void refreshModel(); }} /></Suspense>}
+    </DialogContent></Dialog>
+    <Suspense fallback={null}>{libraryOpen && <MaterialLibrary workspace={w} open={libraryOpen} onOpenChange={setLibraryOpen} />}</Suspense>
+    <Suspense fallback={null}>{taskId && <TaskDetailDrawer key={taskId} api={api} taskId={taskId} onClose={() => setTaskId(null)} onChanged={w.refresh}
+      previous={w.tasks[activeTaskIndex - 1]?.id} next={w.tasks[activeTaskIndex + 1]?.id} onNavigate={setTaskId} />}</Suspense>
+    <Dialog open={Boolean(renaming)} onOpenChange={(open) => { if (!open && !renameBusy) setRenaming(null); }}><DialogContent><DialogHeader><DialogTitle>重命名任务集</DialogTitle><DialogDescription>名称用于在导航中查找，不会修改任务内容。</DialogDescription></DialogHeader>
+      <form onSubmit={(event) => { event.preventDefault(); if (!renaming || !renameText.trim() || renameBusy) return; setRenameBusy(true); void w.rename(renaming.id, renameText.trim()).then(() => setRenaming(null)).catch((cause: Error) => toast.error(cause.message)).finally(() => setRenameBusy(false)); }}>
+        <label htmlFor="conversation-title" className="sr-only">任务集名称</label><Input id="conversation-title" autoFocus required maxLength={100} value={renameText} disabled={renameBusy} onChange={(e) => setRenameText(e.target.value)} /><div className="mt-5 flex justify-end"><Button type="submit" disabled={renameBusy || !renameText.trim()}>{renameBusy ? '保存中' : '保存名称'}</Button></div>
+      </form>
+    </DialogContent></Dialog>
+    <ConfirmDialog value={confirm} onClose={() => setConfirm(null)} />
+    <a href="#main-composer" className="skip-link" onClick={(event) => { event.preventDefault(); document.querySelector<HTMLTextAreaElement>('textarea[aria-label="任务要求"]')?.focus(); }}>跳到任务输入</a>
+  </div><Toaster position="top-center" closeButton /></TooltipProvider>;
 }

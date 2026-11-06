@@ -1,4 +1,4 @@
-// 与 docs/openapi.json 0.1.0 对齐的契约类型
+// 请求结构见 docs/openapi.json 0.3.0，业务语义见 docs/当前行为契约.md。
 
 export type TaskStatus =
   | 'pending_review'
@@ -38,7 +38,7 @@ export interface TaskContent {
 
 export interface ValidationIssue {
   code: string;
-  severity: 'error' | 'warning';
+  severity: 'error' | 'review_required' | 'warning';
   message: string;
   step_no: number | null;
   rule_id: string | null;
@@ -59,6 +59,7 @@ export interface TaskVersion {
   author_type: 'ai' | 'human' | 'ai_revision';
   content: TaskContent;
   change_note: string;
+  change_category: ChangeCategory;
   validation: ValidationReport;
   run_id: string | null;
   created_at: string;
@@ -91,6 +92,8 @@ export interface HumanDecision {
   task_version_id: string;
   decision: 'approve' | 'reject';
   reason: string;
+  resolutions: Record<string, string>;
+  change_category: ChangeCategory;
   created_at: string;
 }
 
@@ -118,6 +121,7 @@ export interface TaskDetail {
   summary: TaskSummary;
   current_version: TaskVersion;
   latest_review: Review | null;
+  latest_decision: HumanDecision | null;
   batch_issues: ValidationIssue[];
   last_error: ErrorInfo | null;
   can_decide: boolean;
@@ -171,6 +175,24 @@ export interface AttachmentSummary {
 
 export interface Attachment extends AttachmentSummary {
   parsed_text: string;
+  inventory: InventoryItem[];
+}
+
+export type ChangeCategory = 'capability' | 'purpose' | 'terminal_state' | 'wording' | 'materials' | 'duplicate' | 'other';
+
+export interface InventoryItem {
+  name: string;
+  category: string;
+  quantity: number | null;
+  available_sets: number | null;
+  color: string;
+  scene: string;
+  initial_position: string;
+  grippable: boolean | null;
+  moving_container: boolean | null;
+  source_attachment_id: string;
+  source_row: number;
+  verification_status: string;
 }
 
 export interface AttachmentPage {
@@ -188,6 +210,7 @@ export interface Batch {
   task_mode: TaskMode;
   reference_text: string;
   attachment_ids: string[];
+  material_snapshot: InventoryItem[];
   rule_snapshot_id: string;
   task_counts: TaskCounts;
   latest_run_id: string | null;
@@ -231,6 +254,7 @@ export interface Conversation {
   id: string;
   agent_role: AgentRole;
   title: string;
+  attachment_ids: string[];
   message_count: number;
   task_count: number;
   created_at: string;
@@ -276,6 +300,7 @@ export interface Settings {
 
 export interface ExportRecord {
   id: string;
+  intent: 'draft' | 'delivery';
   batch_id: string;
   versions: { task_id: string; version_id: string }[];
   filename: string;

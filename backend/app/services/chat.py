@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from typing import Any
+import json
 
 from .. import db
 from ..errors import not_found, validation_error
@@ -26,6 +27,7 @@ def send(
     task_ids: list[str],
     pasted_text: str,
     finish=None,
+    attachment_mode: str = 'inherit',
 ) -> tuple[int, dict[str, Any]]:
     conversation = conversations_service.get(conversation_id)
     content = (content or "").strip()
@@ -40,6 +42,7 @@ def send(
             conversation_id,
             content=content,
             attachment_ids=attachment_ids,
+            attachment_mode=attachment_mode,
             finish=finish,
         )
     return _review(
@@ -53,38 +56,44 @@ def send(
 
 
 def _generate(
-    conversation_id: str, *, content: str, attachment_ids: list[str], finish
+    conversation_id: str, *, content: str, attachment_ids: list[str], finish,
+    attachment_mode: str = 'inherit',
 ) -> tuple[int, dict[str, Any]]:
     if not content:
         raise validation_error("生成会话需要一句具体要求", ["content"])
 
-    conn = db.get_conn()
-    history = conversations_service.history_text(conn, conversation_id)
-
     with db.tx() as c:
+        conversation = c.execute('SELECT * FROM conversations WHERE id=?', (conversation_id,)).fetchone()
+        current = json.loads(conversation['attachment_ids_json'])
+        if len(set(attachment_ids)) != len(attachment_ids):
+            raise validation_error('附件列表存在重复', ['attachment_ids'])
+        if attachment_mode == 'clear':
+            if attachment_ids:
+                raise validation_error('清空资料时不能同时选择附件', ['attachment_ids'])
+            effective = []
+        elif attachment_mode == 'append':
+            effective = list(dict.fromkeys(current + attachment_ids))
+        elif attachment_mode == 'replace' or attachment_ids:
+            effective = attachment_ids
+        else:
+            effective = current
+        if len(effective) > 20:
+            raise validation_error('当前资料集最多 20 个附件', ['attachment_ids'])
+        history = conversations_service.history_text(c, conversation_id)
+        batch = batches_service.create(
+            name=None, goal=content, task_count=0, task_mode='auto', reference_text=history,
+            attachment_ids=effective, conversation_id=conversation_id, connection=c,
+        )
+        run = runs_service.start_generate(batch['id'], connection=c)
         message_id = conversations_service.append_user(
             c,
             conversation_id=conversation_id,
             content=content,
-            attachment_ids=attachment_ids,
+            attachment_ids=effective,
         )
         conversations_service.rename_from_first_message(c, conversation_id, content)
-
-    # 条数与步数都不再由界面传：条数 0 = 由 Agent 按物料库决定，模式 auto = 10~30 步自定
-    batch = batches_service.create(
-        name=None,
-        goal=content,
-        task_count=0,
-        task_mode="auto",
-        reference_text=history,
-        attachment_ids=attachment_ids,
-        conversation_id=conversation_id,
-    )
-    run = runs_service.start_generate(batch["id"])
-    runs_service.wake_worker()
-
-    message = None
-    with db.tx() as c:
+        c.execute('UPDATE conversations SET attachment_ids_json=? WHERE id=?',
+                  (json.dumps(effective), conversation_id))
         conversations_service.attach_run(c, message_id, run_id=run["id"], batch_id=batch["id"])
         row = c.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
         message = conversations_service._render_message(c, row)
@@ -100,7 +109,8 @@ def _generate(
         }
         if finish:
             finish(c, 201, payload)
-        return 201, payload
+    runs_service.wake_worker()
+    return 201, payload
 
 
 def _review(
