@@ -16,7 +16,7 @@ from typing import Any, Callable
 
 from .. import db, ids
 from ..agents import get_client
-from ..agents.trace import trace_run
+from ..agents.trace import RunCancelled, check_cancelled, trace_run
 from ..errors import (
     ApiError,
     ModelCallError,
@@ -132,7 +132,7 @@ def start_generate(batch_id: str, *, finish: FinishFn | None = None, connection=
             task_id=None,
             task_ids=[],
             kind="generate_batch",
-            total=max(batch["task_count"], 1),
+            total=batch["task_count"],
             config_snapshot=_config_snapshot(),
         )
         payload = render.render_run(run)
@@ -240,7 +240,7 @@ def start_revise(
 
 
 def start_review_batch(
-    task_ids: list[str], *, finish: FinishFn | None = None
+    task_ids: list[str], *, finish: FinishFn | None = None, connection=None
 ) -> dict[str, Any]:
     """批量送审：一个作业占住整组任务，逐条走审核，进度按条推进。"""
     if not task_ids:
@@ -252,7 +252,7 @@ def start_review_batch(
 
         raise validation_error("任务列表存在重复", ["task_ids"])
 
-    with db.tx() as conn:
+    with (nullcontext(connection) if connection is not None else db.tx()) as conn:
         rows = []
         for task_id in task_ids:
             task = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
@@ -297,6 +297,66 @@ def get_run(run_id: str) -> dict[str, Any]:
     return render.render_run(row)
 
 
+def active_run() -> dict[str, Any]:
+    conn = db.get_conn()
+    row = _active_run(conn)
+    if row is None:
+        return {'run': None, 'conversation_id': None}
+    message = conn.execute('SELECT conversation_id FROM messages WHERE run_id=? LIMIT 1', (row['id'],)).fetchone()
+    if message is None:
+        message = conn.execute('SELECT conversation_id FROM batches WHERE id=?', (row['batch_id'],)).fetchone()
+    return {'run': render.render_run(row), 'conversation_id': message['conversation_id'] if message else None}
+
+
+def cancel_run(run_id: str) -> dict[str, Any]:
+    with db.tx() as conn:
+        row = conn.execute('SELECT * FROM runs WHERE id=?', (run_id,)).fetchone()
+        if row is None:
+            raise not_found('作业')
+        if row['status'] in ('queued', 'running') and not row['cancel_requested_at']:
+            conn.execute('UPDATE runs SET cancel_requested_at=? WHERE id=?', (db.utcnow(), run_id))
+        result = render.render_run(conn.execute('SELECT * FROM runs WHERE id=?', (run_id,)).fetchone())
+    wake_worker()
+    return result
+
+
+def run_activity(run_id: str) -> dict[str, Any]:
+    """仅输出经过映射的执行事件，不暴露模型输入、私有推理或工具参数。"""
+    from ..config import CONFIG
+
+    get_run(run_id)
+    directory = CONFIG.data_dir / 'agent-traces' / run_id
+    events = []
+    labels = {
+        'memory_loaded': '已加载任务规则',
+        'skill_loaded': '已加载任务设计规范',
+        'model_call_started': '正在等待模型响应',
+        'model_call_finished': '模型已返回结果',
+        'submission_retry': '正在补充结果检查',
+        'completed': '本轮模型处理完成',
+    }
+    tools = {'read_file': '正在查阅规则和参考资料', 'check_tasks': '正在检查任务与规则',
+             'derive_materials': '正在整理任务物料', 'ls': '正在查找参考资料',
+             'glob': '正在查找参考资料', 'grep': '正在查找参考资料'}
+    if directory.exists():
+        for path in directory.glob('*.jsonl'):
+            try:
+                with path.open('r', encoding='utf-8') as stream:
+                    for index, line in enumerate(stream):
+                        try:
+                            event = json.loads(line)
+                        except (ValueError, TypeError):
+                            continue
+                        label = tools.get(event.get('name')) if event.get('event') == 'tool_started' else labels.get(event.get('event'))
+                        if event.get('event') == 'model_call_finished' and event.get('failed'):
+                            label = '本次模型调用未完成'
+                        if label and isinstance(event.get('time'), str):
+                            events.append({'id': f'{path.name}:{index}', 'time': event['time'], 'label': label})
+            except FileNotFoundError:
+                continue
+    return {'items': sorted(events, key=lambda item: (item['time'], item['id']))[-100:]}
+
+
 # ---------- 执行 ----------
 
 def _update_run(run_id: str, **fields: Any) -> None:
@@ -318,9 +378,19 @@ def _fail_run(run_id: str, error: ModelCallError | ApiError) -> None:
     )
 
 
-def _finish_run(run_id: str, *, failed: int, stage: str = "done") -> None:
+def _finish_run(run_id: str, *, failed: int, stage: str = "done", message: str | None = None) -> None:
     status = "failed" if failed else "succeeded"
-    _update_run(run_id, status=status, stage=stage, finished_at=db.utcnow())
+    with db.tx() as conn:
+        check_cancelled(run_id)
+        conn.execute('UPDATE tasks SET busy_run_id=NULL, revision=revision+1, updated_at=? WHERE busy_run_id=?',
+                     (db.utcnow(), run_id))
+        conn.execute('UPDATE runs SET status=?, stage=?, finished_at=? WHERE id=?', (status, stage, db.utcnow(), run_id))
+        if message:
+            from . import conversations as conversations_service
+            source = conn.execute('SELECT conversation_id, batch_id FROM messages WHERE run_id=? ORDER BY created_at ASC LIMIT 1', (run_id,)).fetchone()
+            if source:
+                conversations_service.append_agent(conn, conversation_id=source['conversation_id'], content=message,
+                                                   run_id=run_id, batch_id=source['batch_id'])
 
 
 def _set_task_status(
@@ -347,6 +417,7 @@ def _set_task_status(
 
 def _review_flow(run_id: str, task_id: str, *, reference_text: str) -> int:
     """对当前版本执行 AI 审核；返回技术失败数（0 或 1）。"""
+    check_cancelled(run_id)
     conn = db.get_conn()
     task = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
     version = conn.execute(
@@ -370,6 +441,7 @@ def _review_flow(run_id: str, task_id: str, *, reference_text: str) -> int:
                 content=json.loads(version["content_json"]),
                 task_mode=batch["task_mode"], reference_text=review_reference,
             )
+        check_cancelled(run_id)
         optimized = result.get("optimized_task")
         if optimized is not None:
             try:
@@ -392,6 +464,7 @@ def _review_flow(run_id: str, task_id: str, *, reference_text: str) -> int:
                     }]
                 else:
                     with db.tx() as c:
+                        check_cancelled(run_id)
                         fresh = c.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
                         version = tasks_service.insert_version(
                             c, task_row=fresh, content=optimized, author_type="ai_revision",
@@ -407,7 +480,10 @@ def _review_flow(run_id: str, task_id: str, *, reference_text: str) -> int:
                 for issue in report["issues"] if issue["severity"] == "error"
             ]
             result["summary"] = "优化后仍有规则问题，需要人工处理"
+    except RunCancelled:
+        raise
     except (ModelCallError, ApiError) as exc:
+        check_cancelled(run_id)
         info = _error_info(exc.code, exc.message, exc.details, ref=run_id)
         _set_task_status(task_id, "review_failed", last_error=info)
         with db.tx() as c:
@@ -418,6 +494,7 @@ def _review_flow(run_id: str, task_id: str, *, reference_text: str) -> int:
             )
         return 1
     except Exception as exc:  # 非模型类异常同样进 review_failed，不允许卡死在 ai_reviewing
+        check_cancelled(run_id)
         info = _error_info(
             "INTERNAL_ERROR", f"审核执行异常：{type(exc).__name__}", ref=run_id
         )
@@ -432,6 +509,7 @@ def _review_flow(run_id: str, task_id: str, *, reference_text: str) -> int:
 
     now = db.utcnow()
     with db.tx() as c:
+        check_cancelled(run_id)
         c.execute(
             "INSERT INTO reviews (id, task_id, task_version_id, reviewer_id, run_id, verdict,"
             " issues_json, summary, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -466,8 +544,10 @@ def _finalize_batch_checks(run_id: str, task_ids: list[str]) -> None:
         if task:
             grouped.setdefault(task["batch_id"], []).append(task_id)
     for batch_id, selected in grouped.items():
+        check_cancelled(run_id)
         findings = batch_checks.current_issues(conn, batch_id)
         with db.tx() as c:
+            check_cancelled(run_id)
             for task_id in selected:
                 review = c.execute(
                     "SELECT r.* FROM reviews r JOIN tasks t ON t.id=r.task_id"
@@ -503,6 +583,7 @@ def _release_tasks(task_ids: list[str]) -> None:
 
 
 def _execute_generate_batch(run_id: str) -> None:
+    check_cancelled(run_id)
     conn = db.get_conn()
     run = conn.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
     batch = conn.execute("SELECT * FROM batches WHERE id=?", (run["batch_id"],)).fetchone()
@@ -510,6 +591,7 @@ def _execute_generate_batch(run_id: str) -> None:
     reference = (snapshot["reference_text"] + "\n\n" + snapshot["attachments_text"]).strip()
 
     _update_run(run_id, stage="generating", status="running", started_at=db.utcnow())
+    check_cancelled(run_id)
     try:
         generated = get_client().generate_batch(
             goal=snapshot["goal"],
@@ -517,6 +599,7 @@ def _execute_generate_batch(run_id: str) -> None:
             task_mode=snapshot["task_mode"],
             reference_text=reference,
         )
+        check_cancelled(run_id)
         if not isinstance(generated, dict):
             raise ModelCallError("MODEL_PROTOCOL_ERROR", "生成结果不是任务集对象")
         collection_name = str(generated.get("name", "")).strip()
@@ -534,9 +617,11 @@ def _execute_generate_batch(run_id: str) -> None:
         if not contents:
             raise ModelCallError("MODEL_PROTOCOL_ERROR", "模型没有返回任何任务")
     except ModelCallError as exc:
+        check_cancelled(run_id)
         _fail_run(run_id, exc)
         return
     except ApiError as exc:  # 结构不合法 → 协议级失败，不保存部分草稿
+        check_cancelled(run_id)
         _fail_run(run_id, exc if exc.code == "RULE_TOOL_FAILED" else
                   ModelCallError("MODEL_PROTOCOL_ERROR", exc.message))
         return
@@ -544,6 +629,7 @@ def _execute_generate_batch(run_id: str) -> None:
     # 整体结构校验通过 → 事务保存全部草稿（含规则报告），整批占用
     task_ids: list[str] = []
     with db.tx() as c:
+        check_cancelled(run_id)
         existing = c.execute(
             "SELECT COUNT(*) AS n FROM tasks WHERE batch_id=?", (batch["id"],)
         ).fetchone()["n"]
@@ -596,20 +682,18 @@ def _execute_generate_batch(run_id: str) -> None:
     _update_run(run_id, stage="reviewing", progress_total=len(task_ids))
     failed = 0
     for task_id in task_ids:
+        check_cancelled(run_id)
         failed += _review_flow(run_id, task_id, reference_text=reference)
 
     _finalize_batch_checks(run_id, task_ids)
-    _release_tasks(task_ids)
-    _finish_run(run_id, failed=failed, stage="done" if failed == 0 else "reviewing")
-    _post_generate_message(run_id, task_ids, collection_name, failed=failed)
+    message = _generate_message(task_ids, collection_name, failed=failed)
+    _finish_run(run_id, failed=failed, stage="done" if failed == 0 else "reviewing", message=message)
 
 
-def _post_generate_message(
-    run_id: str, task_ids: list[str], generated_title: str, *, failed: int
-) -> None:
+def _generate_message(
+    task_ids: list[str], generated_title: str, *, failed: int
+) -> str:
     """生成结束后写一条 Agent 回复：条数、名字、审核结果，以及下一步建议。"""
-    from . import conversations as conversations_service
-
     conn = db.get_conn()
     placeholders = ",".join("?" for _ in task_ids)
     rows = conn.execute(
@@ -627,11 +711,12 @@ def _post_generate_message(
         lines.append(f"{index}. {row['name']} · {row['step_count']} 步{flag}")
     if failed:
         lines.append(f"有 {failed} 条技术失败，可在右侧单条重审。")
-    lines.append("看完可以直接「送审」，或者告诉我改哪里。")
-    conversations_service.post_agent_message(run_id, "\n".join(lines))
+    lines.append("AI 审核已完成，请查看结果并逐条人工核验；需要时可重新审核或修改任务。")
+    return "\n".join(lines)
 
 
 def _execute_task_run(run_id: str) -> None:
+    check_cancelled(run_id)
     conn = db.get_conn()
     run = conn.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
     task_id = run["task_id"]
@@ -641,6 +726,7 @@ def _execute_task_run(run_id: str) -> None:
     reference = (snapshot["reference_text"] + "\n\n" + snapshot["attachments_text"]).strip()
 
     _update_run(run_id, status="running", started_at=db.utcnow())
+    check_cancelled(run_id)
     if run["kind"] == "revise_task":
         _update_run(run_id, stage="generating")
         version = conn.execute(
@@ -656,17 +742,21 @@ def _execute_task_run(run_id: str) -> None:
                     feedback=json.loads(run["config_snapshot_json"]).get("feedback", ""),
                 )
             )
+            check_cancelled(run_id)
         except ModelCallError as exc:
+            check_cancelled(run_id)
             # 不新增版本；原正文和状态保留，错误记录在 Run
             _release_tasks([task_id])
             _fail_run(run_id, exc)
             return
         except ApiError as exc:
+            check_cancelled(run_id)
             _release_tasks([task_id])
             _fail_run(run_id, exc if exc.code == "RULE_TOOL_FAILED" else
                       ModelCallError("MODEL_PROTOCOL_ERROR", exc.message))
             return
         with db.tx() as c:
+            check_cancelled(run_id)
             fresh = c.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
             tasks_service.insert_version(
                 c,
@@ -689,18 +779,20 @@ def _execute_task_run(run_id: str) -> None:
 
     failed = _review_flow(run_id, task_id, reference_text=reference)
     _finalize_batch_checks(run_id, [task_id])
-    _release_tasks([task_id])
     _finish_run(run_id, failed=failed, stage="done" if failed == 0 else "reviewing")
 
 
 def _execute_review_batch(run_id: str) -> None:
     """批量送审：逐条审核，允许跨批次（每条用它自己批次的规则快照）。"""
+    check_cancelled(run_id)
     conn = db.get_conn()
     run = conn.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
     task_ids = json.loads(run["task_ids_json"])
     _update_run(run_id, status="running", started_at=db.utcnow(), stage="reviewing")
+    check_cancelled(run_id)
     failed = 0
     for task_id in task_ids:
+        check_cancelled(run_id)
         task = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
         if task is None:
             failed += 1
@@ -716,14 +808,11 @@ def _execute_review_batch(run_id: str) -> None:
             ))
             failed += 1
     _finalize_batch_checks(run_id, task_ids)
-    _release_tasks(task_ids)
-    _finish_run(run_id, failed=failed, stage="done" if failed == 0 else "reviewing")
-    _post_review_message(run_id, task_ids, failed=failed)
+    message = _review_message(run_id, task_ids, failed=failed)
+    _finish_run(run_id, failed=failed, stage="done" if failed == 0 else "reviewing", message=message)
 
 
-def _post_review_message(run_id: str, task_ids: list[str], *, failed: int) -> None:
-    from . import conversations as conversations_service
-
+def _review_message(run_id: str, task_ids: list[str], *, failed: int) -> str:
     conn = db.get_conn()
     placeholders = ",".join("?" for _ in task_ids)
     changed = conn.execute(
@@ -746,7 +835,7 @@ def _post_review_message(run_id: str, task_ids: list[str], *, failed: int) -> No
         lines.append(f"{pending} 条等你确认；右侧可以逐条看改了什么、直接编辑，再导出。")
     if failed:
         lines.append(f"{failed} 条技术失败，可以单条重审。")
-    conversations_service.post_agent_message(run_id, "\n".join(lines))
+    return "\n".join(lines)
 
 
 def execute_queued_run(run_id: str) -> None:
@@ -757,6 +846,7 @@ def execute_queued_run(run_id: str) -> None:
     if row is None:
         return
     try:
+        check_cancelled(run_id)
         run = db.get_conn().execute('SELECT batch_id FROM runs WHERE id=?', (run_id,)).fetchone()
         with trace_run(run_id, row["rule_snapshot_id"], batch_inventory(db.get_conn(), run['batch_id'])):
             if row["kind"] == "generate_batch":
@@ -765,6 +855,8 @@ def execute_queued_run(run_id: str) -> None:
                 _execute_review_batch(run_id)
             else:
                 _execute_task_run(run_id)
+    except RunCancelled:
+        _cancel_run(run_id)
     except ApiError as exc:
         _release_run_tasks(run_id)
         _fail_run(run_id, exc)
@@ -776,7 +868,14 @@ def execute_queued_run(run_id: str) -> None:
         )
 
 
-def _release_run_tasks(run_id: str) -> None:
+def _cancel_run(run_id: str) -> None:
+    _release_run_tasks(run_id, cancelled=True)
+    _update_run(run_id, status='cancelled', finished_at=db.utcnow())
+    from . import conversations as conversations_service
+    conversations_service.post_agent_message(run_id, '本次执行已停止，已保存的任务和版本会保留。')
+
+
+def _release_run_tasks(run_id: str, *, cancelled: bool = False) -> None:
     with db.tx() as conn:
         rows = conn.execute(
             "SELECT id FROM tasks WHERE busy_run_id=?", (run_id,)
@@ -793,8 +892,8 @@ def _release_run_tasks(run_id: str) -> None:
                     now,
                     json.dumps(
                         _error_info(
-                            "RUN_INTERRUPTED",
-                            "作业异常中断；请手动重新审核或重写",
+                            "RUN_CANCELLED" if cancelled else "RUN_INTERRUPTED",
+                            "审核已停止；可手动重新审核" if cancelled else "作业异常中断；请手动重新审核或重写",
                             ref=run_id,
                         ),
                         ensure_ascii=False,

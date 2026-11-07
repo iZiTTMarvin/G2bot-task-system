@@ -431,6 +431,117 @@
         }
       }
     },
+    "/api/v1/runs/active": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Get Active Run",
+        "operationId": "get_active_run_api_v1_runs_active_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Active Run Api V1 Runs Active Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/runs/{run_id}/activity": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Get Run Activity",
+        "operationId": "get_run_activity_api_v1_runs__run_id__activity_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Run Activity Api V1 Runs  Run Id  Activity Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/runs/{run_id}/cancel": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Cancel Run",
+        "operationId": "cancel_run_api_v1_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Cancel Run Api V1 Runs  Run Id  Cancel Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/runs/{run_id}": {
       "get": {
         "tags": [
@@ -1069,6 +1180,45 @@
         }
       }
     },
+    "/api/v1/conversations/start": {
+      "post": {
+        "tags": [
+          "conversations"
+        ],
+        "summary": "Start Conversation",
+        "operationId": "start_conversation_api_v1_conversations_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/conversations/{conversation_id}": {
       "get": {
         "tags": [
@@ -1566,6 +1716,63 @@
           "agent_role"
         ],
         "title": "ConversationCreate"
+      },
+      "ConversationStart": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "maxLength": 20000,
+            "title": "Content",
+            "default": ""
+          },
+          "attachment_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Attachment Ids"
+          },
+          "attachment_mode": {
+            "type": "string",
+            "enum": [
+              "inherit",
+              "replace",
+              "append",
+              "clear"
+            ],
+            "title": "Attachment Mode",
+            "default": "inherit"
+          },
+          "task_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Task Ids"
+          },
+          "pasted_text": {
+            "type": "string",
+            "maxLength": 80000,
+            "title": "Pasted Text",
+            "default": ""
+          },
+          "agent_role": {
+            "type": "string",
+            "enum": [
+              "generator",
+              "reviewer"
+            ],
+            "title": "Agent Role"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "agent_role"
+        ],
+        "title": "ConversationStart"
       },
       "ConversationUpdate": {
         "properties": {

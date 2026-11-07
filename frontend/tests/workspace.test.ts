@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ChatMessage, ValidationIssue } from '../src/api/types.ts';
-import { collectResolutions, effectiveAttachments, errorHint, needsRunResult, taskCategory, visibleMessages } from '../src/lib/presentation.ts';
+import type { ChatMessage, Conversation, ValidationIssue } from '../src/api/types.ts';
+import { collectResolutions, effectiveAttachments, errorHint, isEmptyDefaultConversation, needsRunResult, taskCategory, visibleMessages } from '../src/lib/presentation.ts';
 
 const message = (id: string, role: 'user' | 'agent', run = 'run-1'): ChatMessage => ({ id, role, run_id: run,
   conversation_id: 'conv-1', batch_id: 'batch-1', content: '内容', attachments: [], task_ids: [],
@@ -44,4 +44,14 @@ test('库存核验能区分具体物料，错误有可操作提示', () => {
   assert.notEqual(taskCategory('INVENTORY_毛巾'), taskCategory('INVENTORY_盒子'));
   assert.match(errorHint({ code: 'MODEL_REQUEST_FAILED', message: 'HTTP 404' }), /服务地址与 API 格式/);
   assert.match(errorHint({ code: 'MODEL_TIMEOUT', message: 'timeout' }), /已保留/);
+});
+
+test('只折叠旧版自动创建且完全为空的默认会话', () => {
+  const empty: Conversation = { id: 'c', agent_role: 'generator', title: '新的生成会话', attachment_ids: [],
+    message_count: 0, task_count: 0, created_at: '', updated_at: '' };
+  assert.equal(isEmptyDefaultConversation(empty), true);
+  assert.equal(isEmptyDefaultConversation({ ...empty, title: '我的任务集' }), false);
+  assert.equal(isEmptyDefaultConversation({ ...empty, message_count: 1 }), false);
+  assert.equal(isEmptyDefaultConversation({ ...empty, task_count: 1 }), false);
+  assert.equal(isEmptyDefaultConversation({ ...empty, attachment_ids: ['a'] }), false);
 });

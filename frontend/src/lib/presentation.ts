@@ -1,4 +1,10 @@
-import type { ChatMessage, ErrorInfo, ValidationIssue } from '../api/types.ts';
+import type { ChatMessage, Conversation, ErrorInfo, ValidationIssue } from '../api/types.ts';
+
+export function isEmptyDefaultConversation(conversation: Conversation): boolean {
+  return conversation.message_count === 0 && conversation.task_count === 0 &&
+    conversation.attachment_ids.length === 0 &&
+    ['新的生成会话', '新的审核会话', '新的会话'].includes(conversation.title);
+}
 
 export function visibleMessages(messages: ChatMessage[]): ChatMessage[] {
   const lastAgent = new Map<string, string>();

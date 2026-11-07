@@ -3,6 +3,7 @@ import type { ApiClient } from './client';
 import { ApiError, throwFromResponse } from './errors';
 import type {
   Attachment,
+  ActiveRun,
   AttachmentPage,
   Batch,
   BatchPage,
@@ -16,6 +17,7 @@ import type {
   MessageList,
   ReviewList,
   Run,
+  RunActivity,
   Settings,
   TaskDetail,
   TaskPage,
@@ -79,11 +81,16 @@ export const realClient: ApiClient = {
     request<Run>('POST', `/batches/${batchId}/generate`, { json: {}, key }),
 
   getRun: (runId) => request<Run>('GET', `/runs/${runId}`),
+  getActiveRun: () => request<ActiveRun>('GET', '/runs/active'),
+  getRunActivity: (runId) => request<{ items: RunActivity[] }>('GET', `/runs/${runId}/activity`),
+  cancelRun: (runId) => request<Run>('POST', `/runs/${runId}/cancel`, { json: {} }),
 
   createConversation: (agentRole, title) =>
     request<Conversation>('POST', '/conversations', {
       json: { agent_role: agentRole, title: title ?? null },
     }),
+  startConversation: (agentRole, input, key) =>
+    request('POST', '/conversations/start', { json: { ...input, agent_role: agentRole }, key }),
   listConversations: (agentRole) =>
     request<ConversationPage>(
       'GET',

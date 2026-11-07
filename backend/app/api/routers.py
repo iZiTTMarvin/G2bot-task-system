@@ -22,6 +22,7 @@ from . import deps
 from .schemas import (
     BatchCreate,
     ConversationCreate,
+    ConversationStart,
     ConversationUpdate,
     DecisionRequest,
     EmptyRequest,
@@ -119,6 +120,21 @@ def generate_batch(batch_id: str, request: Request, payload: EmptyRequest | None
     return deps.run_idempotent(
         f"POST /api/v1/batches/{batch_id}/generate", request, payload, runner
     )
+
+
+@router.get("/runs/active", tags=["runs"])
+def get_active_run() -> dict:
+    return runs_service.active_run()
+
+
+@router.get("/runs/{run_id}/activity", tags=["runs"])
+def get_run_activity(run_id: str) -> dict:
+    return runs_service.run_activity(run_id)
+
+
+@router.post("/runs/{run_id}/cancel", tags=["runs"])
+def cancel_run(run_id: str) -> dict:
+    return runs_service.cancel_run(run_id)
 
 
 @router.get("/runs/{run_id}", tags=["runs"])
@@ -247,6 +263,18 @@ def revise_task(task_id: str, request: Request, payload: ReviseRequest) -> Respo
 @router.post("/conversations", status_code=201, tags=["conversations"])
 def create_conversation(payload: ConversationCreate) -> dict:
     return conversations_service.create(payload.agent_role, payload.title)
+
+
+@router.post("/conversations/start", status_code=201, tags=["conversations"])
+def start_conversation(request: Request, payload: ConversationStart) -> Response:
+    def runner(finish: deps.FinishFn) -> tuple[int, dict]:
+        return chat_service.start_conversation(
+            payload.agent_role, content=payload.content, attachment_ids=payload.attachment_ids,
+            task_ids=payload.task_ids, pasted_text=payload.pasted_text,
+            attachment_mode=payload.attachment_mode, finish=finish,
+        )
+
+    return deps.run_idempotent('POST /api/v1/conversations/start', request, payload, runner)
 
 
 @router.get("/conversations", tags=["conversations"])

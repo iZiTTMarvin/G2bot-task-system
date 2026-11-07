@@ -204,6 +204,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "decisions", "resolutions_json", "TEXT NOT NULL DEFAULT '{}'")
     _ensure_column(conn, "decisions", "change_category", "TEXT NOT NULL DEFAULT 'other'")
     _ensure_column(conn, "exports", "intent", "TEXT NOT NULL DEFAULT 'draft'")
+    _ensure_column(conn, "runs", "cancel_requested_at", "TEXT")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_batches_conversation ON batches(conversation_id)"
     )

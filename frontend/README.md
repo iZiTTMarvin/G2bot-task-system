@@ -20,12 +20,13 @@ npm run build
 - `src/App.tsx`：窗口布局、导航、主题、所选任务及跨面板操作。
 - `src/hooks/use-workspace.ts`：会话读取、按会话保留的页面草稿、附件、发送、重试与后台作业轮询。
 - `src/components/ChatPanel.tsx`：需求输入、消息和执行反馈。
+- `src/components/ExecutionPanel.tsx`：真实执行事件、用时和停止操作。
 - `src/components/TaskPanel.tsx`：结果筛选、选择、送审和导出入口。
 - `src/components/TaskDetailDrawer.tsx`：版本编辑、规则问题、人工核验、决定及历史恢复。
 - `src/components/MaterialLibrary.tsx`、`src/pages/SettingsPage.tsx`：资料和模型设置。
 - `src/lib/presentation.ts`：消息去重、资料继承、逐项证据映射等纯逻辑；`tests/` 提供回归。
 
-布局与状态归属见 [DESIGN.md](./DESIGN.md)，浏览器验收见 [UI 架构重构验收](../docs/UI架构重构验收.md)。草稿只在当前页面内保留，刷新或关闭前提示未提交内容，不跨刷新持久化。
+布局与状态归属见 [DESIGN.md](./DESIGN.md)，浏览器验收见 [UI 架构重构验收](../docs/UI架构重构验收.md)。生成和审核各有一份新建草稿；切换会话保留文字与资料选择，首次发送成功后才进入历史列表。草稿只在当前页面内保留，刷新或关闭前提示未提交内容，不跨刷新持久化。旧版默认空会话仅折叠显示，不删除。
 
 ## 组件来源与维护
 

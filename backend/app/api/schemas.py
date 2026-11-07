@@ -59,6 +59,10 @@ class MessageCreate(StrictModel):
     pasted_text: str = Field(default="", max_length=80000)
 
 
+class ConversationStart(MessageCreate):
+    agent_role: Literal["generator", "reviewer"]
+
+
 class SubmitRequest(StrictModel):
     task_ids: list[str] = Field(min_length=1, max_length=100)
     note: str = Field(default="", max_length=2000)

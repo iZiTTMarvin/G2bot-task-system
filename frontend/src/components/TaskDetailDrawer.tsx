@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, ClipboardCheck, FileClock, GripVertical, Pencil, Plus, RotateCcw, ShieldCheck, Trash2, X } from 'lucide-react';
+import { Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, ClipboardCheck, FileClock, GripVertical, Pencil, Plus, RotateCcw, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import type { ApiClient } from '@/api/client';
 import { newIdempotencyKey } from '@/api/client';
-import type { ChangeCategory, TaskContent, TaskDetail, TaskVersion } from '@/api/types';
+import type { ChangeCategory, Run, TaskContent, TaskDetail, TaskVersion } from '@/api/types';
 import { collectResolutions, errorHint, taskCategory } from '@/lib/presentation';
 import { diffLines } from '@/utils/diff';
 import { Button } from '@/components/ui/button';
@@ -19,7 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Busy, ConfirmDialog, IconButton, InlineError, type ConfirmState } from '@/components/shared';
 import StatusChip from '@/components/StatusChip';
 
-interface Props { api: ApiClient; taskId: string; onClose: () => void; onChanged: () => void;
+interface Props { api: ApiClient; taskId: string; activeRun: Run | null; onClose: () => void; onChanged: () => void;
   previous?: string; next?: string; onNavigate: (id: string) => void }
 const categories: Record<ChangeCategory, string> = { capability: '能力', purpose: '用途', terminal_state: '终态', wording: '措辞', materials: '物料', duplicate: '重复', other: '其他' };
 
@@ -31,7 +31,7 @@ function evidenceState(value: TaskDetail) {
   return { common, checked: Object.fromEntries(required.map((i) => [i.code, Boolean(saved[i.code])])), individual: common ? {} : saved };
 }
 
-export default function TaskDetailDrawer({ api, taskId, onClose, onChanged, previous, next, onNavigate }: Props) {
+export default function TaskDetailDrawer({ api, taskId, activeRun, onClose, onChanged, previous, next, onNavigate }: Props) {
   const [detail, setDetail] = useState<TaskDetail | null>(null);
   const [versions, setVersions] = useState<TaskVersion[]>([]);
   const [content, setContent] = useState<TaskContent | null>(null);
@@ -47,6 +47,9 @@ export default function TaskDetailDrawer({ api, taskId, onClose, onChanged, prev
   const [error, setError] = useState('');
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [rejectOpen, setRejectOpen] = useState(false);
+  const [reviseOpen, setReviseOpen] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const [stoppingRunId, setStoppingRunId] = useState<string | null>(null);
   const [reason, setReason] = useState('');
   const actionLock = useRef(false);
   const checksRef = useRef<HTMLElement>(null);
@@ -73,6 +76,9 @@ export default function TaskDetailDrawer({ api, taskId, onClose, onChanged, prev
     if (mounted) { apply(value); setVersions(history.items); }
   }).catch((cause: unknown) => { if (mounted) setError((cause as Error).message); }); return () => { mounted = false; }; }, [api, taskId, apply]);
   const reviewRunning = Boolean(detail?.summary.busy_run_id);
+  const globalBusy = Boolean(activeRun);
+  const stopRequested = Boolean(detail?.summary.busy_run_id && (detail.summary.busy_run_id === stoppingRunId ||
+    (detail.summary.busy_run_id === activeRun?.id && activeRun.cancel_requested_at)));
   useEffect(() => { if (!reviewRunning) return; const timer = window.setInterval(() => { void load(); onChanged(); }, 1500); return () => window.clearInterval(timer); }, [reviewRunning, load, onChanged]);
   useEffect(() => {
     if (!dirty && !pending) return;
@@ -114,6 +120,15 @@ export default function TaskDetailDrawer({ api, taskId, onClose, onChanged, prev
     if (detail.summary.status === 'approved') setConfirm({ title: '重新审核已确认任务', description: '当前版本将撤回交付资格，审核后需重新人工确认。历史记录保留。', action: '重新审核', onConfirm: start });
     else guard(start);
   };
+  const revise = () => {
+    if (!detail || !feedback.trim()) return;
+    const start = () => void perform('revise', async () => {
+      await api.reviseTask(taskId, { expected_revision: detail.summary.revision, version_id: detail.current_version.id, feedback: feedback.trim() }, newIdempotencyKey());
+      setReviseOpen(false); setFeedback(''); await load(); onChanged(); toast.success('已开始修改这条任务');
+    });
+    if (detail.summary.status === 'approved') setConfirm({ title: '修改已确认任务', description: '当前版本将撤回交付资格，修改和审核后需重新人工确认。', action: '开始修改', onConfirm: start });
+    else start();
+  };
   const restore = (version: TaskVersion) => {
     if (!detail) return;
     setConfirm({ title: `从版本 ${version.version_no} 恢复`, description: '旧内容将复制为一个新的人工版本，当前未提交修改会被放弃，全部历史记录保留。', action: '复制为新版本', onConfirm: () => void perform('restore', async () => {
@@ -137,8 +152,12 @@ export default function TaskDetailDrawer({ api, taskId, onClose, onChanged, prev
     </SheetHeader>
     {!detail || !content ? <div className="detail-initial">{error ? <InlineError message={error} action="重试" onAction={() => void load()} /> : <><Skeleton className="h-5 w-1/3" /><Skeleton className="mt-5 h-72 w-full" /></>}</div> : <>
       {error && <div className="detail-error"><InlineError message={error} />{error.includes('已被更新') && <Button variant="outline" size="sm" onClick={() => setConfirm({ title: '加载最新版本', description: '你的未保存编辑将被替换，请先复制需要保留的内容。', action: '加载最新版本', onConfirm: () => void load() })}>查看最新版本</Button>}</div>}
+      {globalBusy && !reviewRunning && <p className="detail-error muted-copy">其他任务正在处理，结束后可开始 AI 修改或重新审核。</p>}
       <Tabs value={tab} onValueChange={setTab} className="detail-tabs"><div className="detail-tabbar"><TabsList><TabsTrigger value="content">任务内容</TabsTrigger><TabsTrigger value="review">AI 审核</TabsTrigger><TabsTrigger value="history">版本历史</TabsTrigger></TabsList>
-        <div className="detail-tab-actions"><Button variant="ghost" size="sm" disabled={busy || editing} onClick={review}><RotateCcw className="size-3.5" />重新审核</Button>
+        <div className="detail-tab-actions">{reviewRunning && <Button variant="outline" size="sm" disabled={Boolean(pending) || stopRequested} onClick={() => void perform('stop', async () => {
+          if (!detail.summary.busy_run_id) return;
+          await api.cancelRun(detail.summary.busy_run_id); setStoppingRunId(detail.summary.busy_run_id); onChanged(); toast.info('已请求停止，等待当前模型调用结束');
+        })}>{stopRequested ? '正在停止' : '停止执行'}</Button>}<Button variant="ghost" size="sm" disabled={busy || globalBusy || editing} onClick={() => guard(() => setReviseOpen(true))}><Sparkles className="size-3.5" />AI 修改</Button><Button variant="ghost" size="sm" disabled={busy || globalBusy || editing} onClick={review}><RotateCcw className="size-3.5" />重新审核</Button>
           {!editing && <Button variant="outline" size="sm" disabled={busy} onClick={() => { setEditing(true); setTab('content'); }}><Pencil className="size-3.5" />编辑任务</Button>}</div></div>
       <div className="detail-scroll"><div className="detail-columns"><main className="detail-document">
         <TabsContent value="content" className="detail-tab-content">
@@ -197,6 +216,9 @@ export default function TaskDetailDrawer({ api, taskId, onClose, onChanged, prev
       </div></footer>
     </>}
     <ConfirmDialog value={confirm} onClose={() => setConfirm(null)} />
+    <Dialog open={reviseOpen} onOpenChange={(open) => { if (!pending) setReviseOpen(open); }}><DialogContent><DialogHeader><DialogTitle>AI 修改当前任务</DialogTitle><DialogDescription>只修改这条任务，完成后会重新审核并保留版本记录。</DialogDescription></DialogHeader>
+      <form onSubmit={(event) => { event.preventDefault(); revise(); }}><label className="sr-only" htmlFor="revision-feedback">修改要求</label><Textarea id="revision-feedback" required maxLength={5000} value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder="例如：缩短步骤，并保留最后的收纳状态" /><div className="mt-5 flex justify-end"><Button type="submit" disabled={Boolean(pending) || !feedback.trim()}>开始修改</Button></div></form>
+    </DialogContent></Dialog>
     <Dialog open={rejectOpen} onOpenChange={(open) => { if (!pending) setRejectOpen(open); }}><DialogContent><DialogHeader><DialogTitle>驳回当前版本</DialogTitle><DialogDescription>说明具体问题，理由会与当前版本一同留档。</DialogDescription></DialogHeader><form onSubmit={(event) => { event.preventDefault(); decide('reject'); }}>
       <label className="sr-only" htmlFor="reject-reason">驳回理由</label><Textarea id="reject-reason" required maxLength={5000} value={reason} disabled={Boolean(pending)} onChange={(e) => setReason(e.target.value)} placeholder="例如：终态收回了仍需使用的物品" />{error && <InlineError message={error} />}<div className="mt-5 flex justify-end"><Button type="submit" variant="destructive" disabled={Boolean(pending) || !reason.trim()}>{pending === 'reject' ? <Busy>提交中</Busy> : '确认驳回'}</Button></div></form></DialogContent></Dialog>
   </SheetContent></Sheet>;

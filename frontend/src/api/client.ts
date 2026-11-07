@@ -1,6 +1,7 @@
 import { ApiError } from './errors';
 import type {
   AgentRole,
+  ActiveRun,
   Attachment,
   AttachmentPage,
   Batch,
@@ -17,6 +18,7 @@ import type {
   MessageList,
   ReviewList,
   Run,
+  RunActivity,
   Settings,
   TaskContent,
   TaskDetail,
@@ -70,8 +72,12 @@ export interface ApiClient {
   generateBatch(batchId: string, key: string): Promise<Run>;
 
   getRun(runId: string): Promise<Run>;
+  getActiveRun(): Promise<ActiveRun>;
+  getRunActivity(runId: string): Promise<{ items: RunActivity[] }>;
+  cancelRun(runId: string): Promise<Run>;
 
   createConversation(agentRole: AgentRole, title?: string): Promise<Conversation>;
+  startConversation(agentRole: AgentRole, input: SendMessageInput, key: string): Promise<SendMessageResult>;
   listConversations(agentRole?: AgentRole): Promise<ConversationPage>;
   getConversation(id: string): Promise<Conversation>;
   renameConversation(id: string, title: string): Promise<Conversation>;

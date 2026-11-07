@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from contextlib import nullcontext
 from typing import Any
 
 from .. import db, ids
@@ -23,13 +24,13 @@ HISTORY_TURNS = 6
 
 # ---------- 会话 ----------
 
-def create(agent_role: str, title: str | None) -> dict[str, Any]:
+def create(agent_role: str, title: str | None, *, connection=None) -> dict[str, Any]:
     if agent_role not in {"generator", "reviewer"}:
         raise validation_error("未知的 Agent 角色", ["agent_role"])
     now = db.utcnow()
     conversation_id = ids.new_id("conv")
     default_title = "新的生成会话" if agent_role == "generator" else "新的审核会话"
-    with db.tx() as conn:
+    with (nullcontext(connection) if connection is not None else db.tx()) as conn:
         conn.execute(
             "INSERT INTO conversations (id, agent_role, title, created_at, updated_at)"
             " VALUES (?,?,?,?,?)",
@@ -114,7 +115,14 @@ def _render_conversation(conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str
         ).fetchall()
     ]
     task_count = 0
-    if batch_ids:
+    if row['agent_role'] == 'reviewer':
+        task_ids = set()
+        for message in conn.execute('SELECT task_ids_json FROM messages WHERE conversation_id=?', (row['id'],)):
+            task_ids.update(_loads(message['task_ids_json'], []))
+        if task_ids:
+            placeholders = ','.join('?' for _ in task_ids)
+            task_count = conn.execute(f'SELECT COUNT(*) AS n FROM tasks WHERE id IN ({placeholders})', list(task_ids)).fetchone()['n']
+    elif batch_ids:
         placeholders = ",".join("?" for _ in batch_ids)
         task_count = conn.execute(
             f"SELECT COUNT(*) AS n FROM tasks WHERE batch_id IN ({placeholders})", batch_ids

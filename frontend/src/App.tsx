@@ -9,6 +9,7 @@ import { useWorkspace } from '@/hooks/use-workspace';
 import WorkspaceSidebar from '@/components/WorkspaceSidebar';
 import ChatPanel from '@/components/ChatPanel';
 import TaskPanel from '@/components/TaskPanel';
+import ExecutionPanel from '@/components/ExecutionPanel';
 import { ConfirmDialog, IconButton, InlineError, type ConfirmState } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -43,7 +44,7 @@ export default function App() {
   const [renameBusy, setRenameBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [model, setModel] = useState('');
+  const [models, setModels] = useState({ generator: '', reviewer: '' });
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const actionLock = useRef(false);
   const pendingAction = useRef<{ digest: string; key: string } | null>(null);
@@ -55,8 +56,8 @@ export default function App() {
     window.addEventListener('beforeunload', guard);
     return () => window.removeEventListener('beforeunload', guard);
   }, [hasDrafts, settingsDirty, sending]);
-  const refreshModel = () => api.getSettings().then((settings) => setModel(settings.generation_model)).catch(() => setModel(''));
-  useEffect(() => { let active = true; api.getSettings().then((settings) => { if (active) setModel(settings.generation_model); }).catch(() => { if (active) setModel(''); }); return () => { active = false; }; }, []);
+  const refreshModel = () => api.getSettings().then((settings) => setModels({ generator: settings.generation_model, reviewer: settings.review_model || settings.generation_model })).catch(() => setModels({ generator: '', reviewer: '' }));
+  useEffect(() => { let active = true; api.getSettings().then((settings) => { if (active) setModels({ generator: settings.generation_model, reviewer: settings.review_model || settings.generation_model }); }).catch(() => { if (active) setModels({ generator: '', reviewer: '' }); }); return () => { active = false; }; }, []);
   const startRename = (conversation: Conversation) => { setRenaming(conversation); setRenameText(conversation.title); };
   const keyFor = (input: unknown) => {
     const digest = JSON.stringify(input);
@@ -67,10 +68,11 @@ export default function App() {
     if (actionLock.current || !w.selected.length) return;
     actionLock.current = true; setSubmitting(true);
     try {
-      let target = w.conversations.find((c) => c.agent_role === 'reviewer')?.id ?? reviewerId.current;
-      if (!target) { const created = await api.createConversation('reviewer'); target = created.id; reviewerId.current = target; }
       const input = { content: `审核所选 ${w.selected.length} 条任务`, task_ids: w.selected };
-      const result = await api.sendMessage(target, input, keyFor(['submit', target, input]));
+      const target = w.conversations.find((c) => c.agent_role === 'reviewer')?.id ?? reviewerId.current;
+      const result = target ? await api.sendMessage(target, input, keyFor(['submit', target, input]))
+        : await api.startConversation('reviewer', input, keyFor(['submit', 'new-reviewer', input]));
+      reviewerId.current = result.conversation.id;
       pendingAction.current = null; w.setSelected([]); w.choose(result.conversation); w.refresh(); setResultsOpen(true); setMobileTab('tasks');
       void w.refreshIndex().catch(() => toast.warning('已送审，导航更新失败，可稍后刷新'));
       toast.success(`已送审 ${input.task_ids.length} 条任务`);
@@ -110,7 +112,11 @@ export default function App() {
     previousBusy.current = workspaceBusy;
   }, [workspaceBusy, refreshIndex, refreshWorkspace]);
   const activeTaskIndex = w.tasks.findIndex((task) => task.id === taskId);
-  const showResults = w.tasks.length > 0 && resultsOpen;
+  const showResults = resultsOpen;
+  const hasResultsView = w.tasks.length > 0 || Boolean(w.currentRun);
+  const otherActiveConversation = w.globalBusy && !w.busy
+    ? w.conversations.find((item) => item.id === w.activeRun.conversation_id) : null;
+  const model = models[w.role];
   const sidebar = (mobile: boolean) => <WorkspaceSidebar workspace={w} onLibrary={() => { setLibraryOpen(true); setMobileSidebar(false); }}
     onSettings={() => { setSettingsOpen(true); setMobileSidebar(false); }} onRename={startRename}
     onCollapse={() => mobile ? setMobileSidebar(false) : setSidebarCollapsed(true)} onNavigate={mobile ? () => setMobileSidebar(false) : undefined} />;
@@ -119,35 +125,36 @@ export default function App() {
     <div className="workspace-main"><header className="workspace-header"><div className="workspace-heading">
       <IconButton className="mobile-nav-trigger" label="打开导航" onClick={() => setMobileSidebar(true)}><Menu /></IconButton>
       {sidebarCollapsed && <IconButton className="desktop-expand-trigger" label="展开导航" onClick={() => setSidebarCollapsed(false)}><PanelLeftOpen /></IconButton>}
-      <div><span className="header-eyebrow">{w.role === 'reviewer' ? '审核工作区' : '任务工作区'}</span><h1 title={w.conversation?.title}>{w.conversation?.title ?? '新建任务集'}</h1></div>
+      <div><span className="header-eyebrow">{w.role === 'reviewer' ? '审核工作区' : '任务工作区'}</span><h1 title={w.conversation?.title}>{w.conversation?.title ?? (w.role === 'reviewer' ? '审核已有任务' : '新建任务集')}</h1></div>
     </div><div className="header-actions">
-      <span className="model-indicator" title={model}>{model ? <><i />{model}</> : <button onClick={() => setSettingsOpen(true)}>模型设置</button>}</span>
+      <span className="model-indicator" title={model}>{model || <button onClick={() => setSettingsOpen(true)}>模型设置</button>}</span>
       <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label="切换主题">{theme === 'dark' ? <Moon className="size-4" /> : <Sun className="size-4" />}</Button></DropdownMenuTrigger>
         <DropdownMenuContent align="end"><DropdownMenuLabel>外观</DropdownMenuLabel>{[{ value: 'light', label: '浅色', Icon: Sun }, { value: 'dark', label: '深色', Icon: Moon }, { value: 'system', label: '跟随系统', Icon: Monitor }].map(({ value, label, Icon }) => <DropdownMenuItem key={value} onSelect={() => setTheme(value)}><Icon className="size-4" />{label}{theme === value && <span className="ml-auto">✓</span>}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>
       <IconButton label="模型设置" onClick={() => setSettingsOpen(true)}><Settings2 /></IconButton>
-      {w.tasks.length > 0 && <IconButton className="results-toggle" label={showResults ? '收起任务结果' : '展开任务结果'} onClick={() => setResultsOpen((value) => !value)}>{showResults ? <PanelRightClose /> : <PanelRightOpen />}</IconButton>}
+      <IconButton className="results-toggle" label={showResults ? '收起执行与结果' : '展开执行与结果'} onClick={() => setResultsOpen((value) => !value)}>{showResults ? <PanelRightClose /> : <PanelRightOpen />}</IconButton>
     </div></header>
       {w.indexError && <InlineError message={w.indexError} action="重试" onAction={() => void w.refreshIndex().catch((e: Error) => toast.error(e.message))} />}
-      {w.tasks.length > 0 && <div className="mobile-view-tabs" role="tablist" aria-label="工作区视图" onKeyDown={(event) => {
+      {w.globalBusy && !w.busy && <div className="global-run-notice">已有任务正在处理，结束后可开始新任务。{otherActiveConversation && <button onClick={() => w.choose(otherActiveConversation)}>查看正在运行的任务集</button>}</div>}
+      {hasResultsView && <div className="mobile-view-tabs" role="tablist" aria-label="工作区视图" onKeyDown={(event) => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();
         const buttons = event.currentTarget.querySelectorAll<HTMLButtonElement>('[role=tab]');
         const value = event.key === 'Home' ? 'chat' : event.key === 'End' ? 'tasks' : mobileTab === 'chat' ? 'tasks' : 'chat';
         setMobileTab(value); buttons[value === 'chat' ? 0 : 1]?.focus();
-      }}><button id="view-chat-tab" role="tab" aria-controls="workspace-chat" tabIndex={mobileTab === 'chat' ? 0 : -1} aria-selected={mobileTab === 'chat'} onClick={() => setMobileTab('chat')}>对话</button><button id="view-tasks-tab" role="tab" aria-controls="workspace-results" tabIndex={mobileTab === 'tasks' ? 0 : -1} aria-selected={mobileTab === 'tasks'} onClick={() => setMobileTab('tasks')}>任务结果<span>{w.tasks.length}</span></button></div>}
-      <div className={`workspace-body${showResults ? ' has-results' : ''} mobile-view-${w.tasks.length ? mobileTab : 'chat'}`}>
+      }}><button id="view-chat-tab" role="tab" aria-controls="workspace-chat" tabIndex={mobileTab === 'chat' ? 0 : -1} aria-selected={mobileTab === 'chat'} onClick={() => setMobileTab('chat')}>对话</button><button id="view-tasks-tab" role="tab" aria-controls="workspace-results" tabIndex={mobileTab === 'tasks' ? 0 : -1} aria-selected={mobileTab === 'tasks'} onClick={() => setMobileTab('tasks')}>执行与结果{w.tasks.length > 0 && <span>{w.tasks.length}</span>}</button></div>}
+      <div className={`workspace-body${showResults ? ' has-results' : ''} mobile-view-${hasResultsView ? mobileTab : 'chat'}`}>
         <ChatPanel workspace={w} onLibrary={() => setLibraryOpen(true)} onSettings={() => setSettingsOpen(true)} />
-        {w.tasks.length > 0 && <div id="workspace-results" role="tabpanel" aria-labelledby="view-tasks-tab" className={`results-container${!resultsOpen ? ' is-collapsed' : ''}`}><TaskPanel tasks={w.tasks} selected={w.selected} onSelection={w.setSelected} onOpen={setTaskId}
-          onExport={(intent) => void exportTasks(intent)} onSubmit={requestSubmit} exporting={exporting} submitting={submitting} busy={w.busy || w.interactionBusy} /></div>}
+        <div id="workspace-results" role={hasResultsView ? 'tabpanel' : undefined} aria-labelledby={hasResultsView ? 'view-tasks-tab' : undefined} className={`results-container${!resultsOpen ? ' is-collapsed' : ''}`}><ExecutionPanel workspace={w} />{w.tasks.length > 0 && <TaskPanel tasks={w.tasks} selected={w.selected} onSelection={w.setSelected} onOpen={setTaskId}
+          onExport={(intent) => void exportTasks(intent)} onSubmit={requestSubmit} exporting={exporting} submitting={submitting} busy={w.globalBusy || w.interactionBusy} />}</div>
       </div>
-      {!showResults && w.tasks.length > 0 && <Button className="floating-results" variant="outline" onClick={() => { setResultsOpen(true); setMobileTab('tasks'); }}><Download className="size-4" />查看 {w.tasks.length} 条任务</Button>}
+      {!showResults && hasResultsView && <Button className="floating-results" variant="outline" onClick={() => { setResultsOpen(true); setMobileTab('tasks'); }}><Download className="size-4" />查看执行与结果</Button>}
     </div>
     <Sheet open={mobileSidebar} onOpenChange={setMobileSidebar}><SheetContent side="left" className="mobile-sidebar-sheet" showCloseButton={false}><SheetTitle className="sr-only">任务集导航</SheetTitle><SheetDescription className="sr-only">查看历史任务集或创建新任务</SheetDescription>{sidebar(true)}</SheetContent></Sheet>
     <Dialog open={settingsOpen} onOpenChange={closeSettings}><DialogContent className="settings-dialog sm:max-w-xl"><DialogHeader><DialogTitle>模型设置</DialogTitle><DialogDescription>连接你自己的 OpenAI 或 Anthropic 兼容服务。</DialogDescription></DialogHeader>
       {settingsOpen && <Suspense fallback={<Skeleton className="h-64 w-full" />}><SettingsPage api={api} onDirtyChange={setSettingsDirty} onSaved={() => { void refreshModel(); }} /></Suspense>}
     </DialogContent></Dialog>
     <Suspense fallback={null}>{libraryOpen && <MaterialLibrary workspace={w} open={libraryOpen} onOpenChange={setLibraryOpen} />}</Suspense>
-    <Suspense fallback={null}>{taskId && <TaskDetailDrawer key={taskId} api={api} taskId={taskId} onClose={() => setTaskId(null)} onChanged={w.refresh}
+    <Suspense fallback={null}>{taskId && <TaskDetailDrawer key={taskId} api={api} taskId={taskId} activeRun={w.activeRun.run} onClose={() => setTaskId(null)} onChanged={w.refresh}
       previous={w.tasks[activeTaskIndex - 1]?.id} next={w.tasks[activeTaskIndex + 1]?.id} onNavigate={setTaskId} />}</Suspense>
     <Dialog open={Boolean(renaming)} onOpenChange={(open) => { if (!open && !renameBusy) setRenaming(null); }}><DialogContent><DialogHeader><DialogTitle>重命名任务集</DialogTitle><DialogDescription>名称用于在导航中查找，不会修改任务内容。</DialogDescription></DialogHeader>
       <form onSubmit={(event) => { event.preventDefault(); if (!renaming || !renameText.trim() || renameBusy) return; setRenameBusy(true); void w.rename(renaming.id, renameText.trim()).then(() => setRenaming(null)).catch((cause: Error) => toast.error(cause.message)).finally(() => setRenameBusy(false)); }}>

@@ -31,7 +31,7 @@ from .contracts import GeneratedBatch, ReviewedTask
 from .models import make_model
 from .prompts import role_prompt
 from .tools import TaskTools
-from .trace import AgentTrace, current_snapshot
+from .trace import AgentTrace, RunCancelled, check_cancelled, current_snapshot
 
 MEMORY_PATHS = [
     "/rules/SKILL.md",
@@ -51,6 +51,7 @@ class TraceCallback(BaseCallbackHandler):
         self._lock = threading.Lock()
 
     def on_chat_model_start(self, serialized, messages, **kwargs):
+        check_cancelled(getattr(self.trace, 'run_id', None))
         call_id = str(kwargs.get('run_id'))
         with self._lock:
             self._calls[call_id] = time.perf_counter()
@@ -76,11 +77,13 @@ class TraceCallback(BaseCallbackHandler):
 
     def on_llm_end(self, response, *, run_id, **kwargs):
         self._finish_call(run_id, False)
+        check_cancelled(getattr(self.trace, 'run_id', None))
 
     def on_llm_error(self, error, *, run_id, **kwargs):
         self._finish_call(run_id, True)
 
     def on_tool_start(self, serialized, input_str, *, inputs=None, **kwargs):
+        check_cancelled(getattr(self.trace, 'run_id', None))
         fields = {}
         if serialized.get("name") == "read_file" and inputs:
             fields["path"] = inputs.get("file_path")
@@ -219,6 +222,8 @@ class DeepAgentClient:
                         "。已检查候选编号：" + json.dumps(list(tools.checked)) +
                         "。完成后重新提交结果，不得宣称已执行未执行的检查。"}]}
             raise ModelCallError("MODEL_PROTOCOL_ERROR", "Agent 未完成 Skill 或最终正文工具检查")
+        except RunCancelled:
+            raise
         except ModelCallError as exc:
             trace.write("failed", code=exc.code)
             raise

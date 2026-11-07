@@ -100,6 +100,8 @@ export interface HumanDecision {
 export interface TaskSummary {
   id: string;
   batch_id: string;
+  batch_name?: string;
+  batch_created_at?: string;
   seq: number;
   name: string;
   step_count: number;
@@ -240,13 +242,17 @@ export interface Run {
   task_ids: string[];
   kind: RunKind;
   stage: 'queued' | 'generating' | 'validating' | 'reviewing' | 'done';
-  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'interrupted';
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'interrupted' | 'cancelled';
   progress: RunProgress;
   error: ErrorInfo | null;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
+  cancel_requested_at?: string | null;
 }
+
+export interface RunActivity { id: string; time: string; label: string }
+export interface ActiveRun { run: Run | null; conversation_id: string | null }
 
 export type AgentRole = 'generator' | 'reviewer';
 

@@ -159,6 +159,7 @@ def render_run(row: sqlite3.Row) -> dict[str, Any]:
         "created_at": row["created_at"],
         "started_at": row["started_at"],
         "finished_at": row["finished_at"],
+        "cancel_requested_at": row["cancel_requested_at"],
     }
 
 

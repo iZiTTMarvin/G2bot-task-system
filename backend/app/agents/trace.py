@@ -13,6 +13,18 @@ _SNAPSHOT_ID: ContextVar[str | None] = ContextVar("agent_snapshot_id", default=N
 _INVENTORY: ContextVar[list[dict] | None] = ContextVar('agent_inventory', default=None)
 
 
+class RunCancelled(Exception):
+    """后台作业已请求停止，执行器应在安全边界退出。"""
+
+
+def check_cancelled(run_id: str | None) -> None:
+    if run_id is None:
+        return
+    row = db.get_conn().execute('SELECT cancel_requested_at FROM runs WHERE id=?', (run_id,)).fetchone()
+    if row and row['cancel_requested_at']:
+        raise RunCancelled()
+
+
 @contextmanager
 def trace_run(run_id: str, snapshot_id: str, inventory: list[dict] | None = None):
     token = _RUN_ID.set(run_id)
@@ -36,6 +48,7 @@ def current_snapshot() -> str | None:
 
 class AgentTrace:
     def __init__(self, role: str, snapshot_id: str):
+        self.run_id = _RUN_ID.get()
         directory = CONFIG.data_dir / "agent-traces" / (_RUN_ID.get() or "standalone")
         directory.mkdir(parents=True, exist_ok=True)
         self.path = directory / f"{role}-{uuid4().hex}.jsonl"
